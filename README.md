@@ -1,4 +1,4 @@
-# Chart of Account Connector
+# Customer Connector
 
 ## Setup Project
 Once you forked and cloned the repo, run:
