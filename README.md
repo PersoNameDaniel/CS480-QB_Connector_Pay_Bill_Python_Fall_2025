@@ -1,4 +1,4 @@
-# Invoice Connector
+# Receive Payment Connector 
 
 ## Setup Project
 Once you forked and cloned the repo, run:
