@@ -1,4 +1,4 @@
-# Item Bill Connector 
+# Service Bill Connector 
 
 ## Setup Project
 Once you forked and cloned the repo, run:
