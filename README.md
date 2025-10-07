@@ -1,4 +1,4 @@
-# Receive Payment Connector 
+# Misc Income Connector 
 
 ## Setup Project
 Once you forked and cloned the repo, run:
