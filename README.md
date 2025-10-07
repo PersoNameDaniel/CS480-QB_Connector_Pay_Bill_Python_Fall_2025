@@ -1,4 +1,4 @@
-# Vendor Connector
+# Part Connector
 
 ## Setup Project
 Once you forked and cloned the repo, run:
