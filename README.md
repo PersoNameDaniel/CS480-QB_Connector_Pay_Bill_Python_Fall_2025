@@ -1,4 +1,4 @@
-# Part Connector
+# Invoice Connector
 
 ## Setup Project
 Once you forked and cloned the repo, run:
