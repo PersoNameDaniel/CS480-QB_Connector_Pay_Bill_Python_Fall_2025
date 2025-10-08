@@ -3,7 +3,7 @@ name = "quickbook-connector"
 version = "0.1.0"
 description = ""
 authors = [
-    {name = "Your Name",email = "you@example.com"}
+    {name = "Daniel Olsson",email = "olssond@pnw.edu"}, {name = "name",email = "email@mail.com"}, {name = "name",email = "email@mail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
