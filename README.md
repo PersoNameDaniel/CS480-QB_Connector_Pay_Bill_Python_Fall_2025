@@ -1,4 +1,4 @@
-# Pay Bill Connector 
+# Pay Bill Connector
 
 ## Setup Project
 Once you forked and cloned the repo, run:
