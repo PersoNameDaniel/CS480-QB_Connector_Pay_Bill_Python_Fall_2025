@@ -14,7 +14,7 @@ except ImportError:  # pragma: no cover
 from .models import BillPayment
 
 
-APP_NAME = "Quickbooks Connector" # do not chanege this
+APP_NAME = "Quickbooks Connector"  # do not chanege this
 
 
 def _require_win32com() -> None:
@@ -59,6 +59,7 @@ def _parse_response(raw_xml: str) -> ET.Element:
         raise RuntimeError(status_message)
     return root
 
+
 def fetch_bill_payments(company_file: str | None = None) -> List[BillPayment]:
     """Return bill payments (checks) with memo, date, bank account, and amount to pay."""
 
@@ -87,34 +88,32 @@ def fetch_bill_payments(company_file: str | None = None) -> List[BillPayment]:
 
         # Amount to Pay = sum of AppliedToTxnRet/PaymentAmount; fallback to header total
         from decimal import Decimal, InvalidOperation
-        amount_to_pay: str = ""
+
+        amount_to_pay_value: float = 0.0
         try:
             line_amounts = [
                 Decimal((n.text or "0").strip())
                 for n in ret.findall("AppliedToTxnRet/PaymentAmount")
             ]
             if line_amounts:
-                amount_to_pay = str(sum(line_amounts))
+                amount_to_pay_value = float(sum(line_amounts))
             else:
-                header_amt = (ret.findtext("TotalAmount") or ret.findtext("Amount") or "").strip()
-                amount_to_pay = header_amt
-        except (InvalidOperation, AttributeError):
-            amount_to_pay = (ret.findtext("TotalAmount") or ret.findtext("Amount") or "").strip()
+                header_amt = (
+                    ret.findtext("TotalAmount") or ret.findtext("Amount") or "0"
+                ).strip()
+                amount_to_pay_value = float(Decimal(header_amt))
+        except (InvalidOperation, AttributeError, ValueError):
+            amount_to_pay_value = 0.0
 
-        # Keep existing model shape: record_id + name + source
-        # Put the requested fields into the display name for now
-        display = " | ".join(
-            [p for p in [memo or "Bill Payment", txn_date, bank_account, amount_to_pay] if p]
-        )
-
+        # Build the BillPayment model as defined in models.py
         payments.append(
             BillPayment(
-                record_id=txn_id,
-                name=display,
-                source="quickbooks",
+                bill=memo or "Bill Payment",
+                date=txn_date,
+                bank_account=bank_account,
+                amount_to_pay=amount_to_pay_value,
             )
         )
-
     return payments
 
 
@@ -124,6 +123,7 @@ def add_bill_payments_batch():
 
 def add_bill_payment():
     raise NotImplementedError
+
 
 def _escape_xml(value: str) -> str:
     return (
