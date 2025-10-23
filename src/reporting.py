@@ -8,6 +8,27 @@ from pathlib import Path
 from typing import Any, Dict
 
 
+def save_json_report(data: Dict[str, Any], output_path: str | Path) -> None:
+    """Save the comparison results to a JSON file.
+
+    Args:
+        data: The dictionary containing discrepancy results.
+        output_path: Path where the JSON file should be saved.
+
+    Raises:
+        OSError: If the file cannot be written.
+    """
+    path = Path(output_path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+        # Print(f"Report successfully saved to {path}")
+        print(f"Report successfully saved to {path}")
+    except Exception as e:
+        raise OSError(f"Failed to save JSON report to {path}: {e}")
+
+
 def write_report(payload: Dict[str, Any], output_path: Path) -> Path:
     """Serialise the payload to JSON at output_path.
 
@@ -27,4 +48,4 @@ def iso_timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-__all__ = ["write_report", "iso_timestamp"]
+__all__ = ["save_json_report", "write_report", "iso_timestamp"]
