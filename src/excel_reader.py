@@ -88,7 +88,29 @@ def extract_account_debit_nonvendor(
     return _read_sheet_as_dicts(path, "account debit nonvendor")
 
 
+def read_excel_data(workbook_path: str, sheet_name: str) -> List[Dict[str, object]]:
+    """Generic entry point for reading any Excel sheet.
+
+    Args:
+        workbook_path: Path to Excel workbook.
+        sheet_name: Name of the sheet to extract.
+
+    Returns:
+        A list of dictionaries mapping column headers to cell values.
+    """
+    path = Path(workbook_path)
+
+    # Automatically pick correct helper based on sheet name
+    if sheet_name.lower().strip() == "account debit vendor":
+        return extract_account_debit_vendor(path)
+    elif sheet_name.lower().strip() == "account debit nonvendor":
+        return extract_account_debit_nonvendor(path)
+    else:
+        return _read_sheet_as_dicts(path, sheet_name)
+
+
 __all__ = [
     "extract_account_debit_vendor",
     "extract_account_debit_nonvendor",
+    "read_excel_data",
 ]

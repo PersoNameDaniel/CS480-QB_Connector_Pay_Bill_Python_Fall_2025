@@ -1,6 +1,13 @@
-from __future__ import annotations
 from typing import List, Dict, Any
 from decimal import Decimal
+
+
+def normalize_id(value: Any) -> int | str:
+    """Normalize ID to int if possible, otherwise string."""
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return str(value).strip() if value is not None else ""
 
 
 def compare_records(
@@ -8,29 +15,49 @@ def compare_records(
     qb_data: List[Dict[str, Any]],
     amount_tolerance: float = 0.01,
 ) -> Dict[str, Any]:
-    """Compare financial records from Excel and QuickBooks.
+    """Compare financial records from Excel and QuickBooks."""
 
-    Args:
-        excel_data: A list of dictionaries representing financial records from Excel.
-            Each record must have 'id' and 'amount' fields.
-        qb_data: A list of dictionaries representing financial records from QuickBooks.
-            Each record must have 'id' and 'amount' fields.
-        amount_tolerance: Maximum allowed difference between amounts (default: 0.01)
+    # 🔹 Normalize Excel data into standard form
+    normalized_excel: List[Dict[str, Any]] = []
+    for record in excel_data:
+        record_id = (
+            record.get("Parent ID")
+            or record.get("Child ID")
+            or record.get("Invoice Num")
+            or record.get("id")
+        )
+        amount = (
+            record.get("Invoice Amount")
+            or record.get("Check Amount")
+            or record.get("AP")
+            or record.get("amount")
+        )
+        if record_id is not None and amount is not None:
+            normalized_excel.append(
+                {"id": normalize_id(record_id), "amount": float(amount)}
+            )
 
-    Returns:
-        A dictionary containing:
-            - missing_in_excel: Records present in QB but not Excel
-            - missing_in_qb: Records present in Excel but not QB
-            - amount_mismatches: Records where amounts differ
+    # 🔹 Normalize QuickBooks data (if any)
+    normalized_qb: List[Dict[str, Any]] = []
+    for record in qb_data:
+        record_id = (
+            record.get("id")
+            or record.get("TxnID")
+            or record.get("bill")
+            or record.get("Name")
+        )
+        amount = (
+            record.get("amount")
+            or record.get("amount_to_pay")
+            or record.get("TotalAmount")
+        )
+        if record_id is not None and amount is not None:
+            normalized_qb.append(
+                {"id": normalize_id(record_id), "amount": float(amount)}
+            )
 
-    Raises:
-        KeyError: If records are missing required fields
-        TypeError: If amount values are not numeric
-    """
-    # Validate input records
-    for record in excel_data + qb_data:
-        if not isinstance(record, dict):
-            raise TypeError(f"Invalid record format: {record}")
+    # 🔹 Validate
+    for record in normalized_excel + normalized_qb:
         if "id" not in record or "amount" not in record:
             raise KeyError(f"Record missing required fields: {record}")
         if not isinstance(record["amount"], (int, float, Decimal)):
@@ -42,31 +69,33 @@ def compare_records(
         "amount_mismatches": [],
     }
 
-    # Create lookup dictionaries
-    excel_dict = {record["id"]: record for record in excel_data}
-    qb_dict = {record["id"]: record for record in qb_data}
+    excel_dict = {normalize_id(r["id"]): r for r in normalized_excel}
+    qb_dict = {normalize_id(r["id"]): r for r in normalized_qb}
 
-    # Check for records missing in Excel
+    # 🔹 Missing in Excel
     for qb_id, qb_record in qb_dict.items():
         if qb_id not in excel_dict:
             discrepancies["missing_in_excel"].append(qb_record)
 
-    # Check for records missing in QuickBooks
+    # 🔹 Missing in QuickBooks
     for excel_id, excel_record in excel_dict.items():
         if excel_id not in qb_dict:
             discrepancies["missing_in_qb"].append(excel_record)
 
-    # Check for amount mismatches
+    # 🔹 Amount mismatches
     for record_id in set(excel_dict.keys()) & set(qb_dict.keys()):
-        excel_amount = float(excel_dict[record_id]["amount"])
-        qb_amount = float(qb_dict[record_id]["amount"])
-        if abs(excel_amount - qb_amount) > amount_tolerance:
+        excel_amt = float(excel_dict[record_id]["amount"])
+        qb_amt = float(qb_dict[record_id]["amount"])
+        if abs(excel_amt - qb_amt) > amount_tolerance:
             discrepancies["amount_mismatches"].append(
-                {"id": record_id, "excel_amount": excel_amount, "qb_amount": qb_amount}
+                {"id": record_id, "excel_amount": excel_amt, "qb_amount": qb_amt}
             )
 
-    # Sort results for consistent ordering
+    # 🔹 Sort results
     for key in discrepancies:
         discrepancies[key].sort(key=lambda x: x["id"] if isinstance(x, dict) else x)
 
     return discrepancies
+
+
+__all__ = ["compare_records"]
