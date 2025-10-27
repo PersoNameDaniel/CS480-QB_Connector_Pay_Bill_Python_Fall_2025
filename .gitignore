@@ -4,3 +4,4 @@ dist/
 build/
 poetry.lock
 .~lock.company_data.xlsx#
+report.json
