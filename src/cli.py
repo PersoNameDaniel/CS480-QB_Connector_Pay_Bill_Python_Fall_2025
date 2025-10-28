@@ -13,6 +13,7 @@ from typing import Any, List, Dict
 from .excel_reader import extract_account_debit_vendor
 from .compare import compare_records
 from .reporting import save_json_report
+from dataclasses import asdict
 
 # Optional import for QuickBooks COM connection
 try:
@@ -70,8 +71,7 @@ def main() -> int:
     else:
         try:
             print("Connecting to QuickBooks...")
-            qb_payments = fetch_bill_payments(args.company_file)
-            qb_data = [bp.__dict__ for bp in qb_payments]
+            qb_data = [asdict(bp) for bp in fetch_bill_payments(args.company_file)]
             print(f"Retrieved {len(qb_data)} QuickBooks payments.")
         except Exception as e:
             print(f"Error fetching QuickBooks data: {e}")
