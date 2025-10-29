@@ -5,6 +5,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from typing import Iterator, List
+from datetime import date
 
 try:
     import win32com.client  # type: ignore
@@ -35,6 +36,22 @@ def _qb_session() -> Iterator[tuple[object, object]]:
             session.EndSession(ticket)
         finally:
             session.CloseConnection()
+
+
+def _normalize(h: object) -> str:
+    return str(h).strip() if h is not None else ""
+
+
+def _parse_qb_date(value: str | None) -> date:
+    """Parse QB date or datetime to Python date. Expects 'YYYY-MM-DD' or startswith it."""
+    if not value:
+        raise ValueError("Missing QuickBooks date")
+    s = value.strip()
+    # QBXML Date is 'YYYY-MM-DD'; DateTime starts with that. Use first 10 chars safely.
+    try:
+        return date.fromisoformat(s[:10])
+    except ValueError as e:
+        raise ValueError(f"Invalid QuickBooks date: {s}") from e
 
 
 def _send_qbxml(qbxml: str) -> ET.Element:
@@ -83,8 +100,12 @@ def fetch_bill_payments(company_file: str | None = None) -> List[BillPayment]:
             continue
 
         memo = (ret.findtext("Memo") or "").strip()
-        txn_date = (ret.findtext("TxnDate") or "").strip()
-        bank_account = (ret.findtext("BankAccountRef/FullName") or "").strip()
+        txn_date_raw = ret.findtext("TxnDate")
+        try:
+            txn_date = _parse_qb_date(txn_date_raw)
+        except ValueError:
+            continue  # skip if date is missing/invalid
+        # bank_account = (ret.findtext("BankAccountRef/FullName") or "").strip()
 
         # Amount to Pay = sum of AppliedToTxnRet/PaymentAmount; fallback to header total
         from decimal import Decimal, InvalidOperation
@@ -108,9 +129,8 @@ def fetch_bill_payments(company_file: str | None = None) -> List[BillPayment]:
         # Build the BillPayment model as defined in models.py
         payments.append(
             BillPayment(
-                bill=memo or "Bill Payment",
+                id=memo or "invalid",
                 date=txn_date,
-                bank_account=bank_account,
                 amount_to_pay=amount_to_pay_value,
             )
         )
