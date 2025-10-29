@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse
 import sys
 from typing import Any, List, Dict
+from dataclasses import asdict, is_dataclass
+from pathlib import Path
 
 from .excel_reader import extract_account_debit_vendor
 from .compare import compare_records
@@ -19,6 +21,22 @@ try:
     from .qb_gateway import fetch_bill_payments  # type: ignore
 except ImportError:
     fetch_bill_payments = None  # type: ignore
+
+
+def _to_record_list(items: List[Any]) -> List[Dict[str, Any]]:
+    """Convert a list of dataclass instances or dicts into list[dict]."""
+    out: List[Dict[str, Any]] = []
+    for item in items:
+        if isinstance(item, dict):
+            out.append(item)
+        # ensure item is a dataclass instance (not the dataclass type)
+        elif is_dataclass(item) and not isinstance(item, type):
+            out.append(asdict(item))
+        elif hasattr(item, "__dict__"):
+            out.append(dict(item.__dict__))  # best-effort fallback
+        else:
+            out.append({"value": item})
+    return out
 
 
 def main() -> int:
@@ -64,6 +82,9 @@ def main() -> int:
         print(f"Error reading Excel: {e}")
         return 1
 
+    # convert dataclass instances to plain dicts for compare_records
+    excel_records: List[Dict[str, Any]] = _to_record_list(excel_data)
+
     qb_data: List[Dict[str, Any]] = []
     if args.skip_qb or fetch_bill_payments is None:
         print("Skipping QuickBooks fetch (using empty dataset).")
@@ -71,7 +92,7 @@ def main() -> int:
         try:
             print("Connecting to QuickBooks...")
             qb_payments = fetch_bill_payments(args.company_file)
-            qb_data = [bp.__dict__ for bp in qb_payments]
+            qb_data = _to_record_list(qb_payments)
             print(f"Retrieved {len(qb_data)} QuickBooks payments.")
         except Exception as e:
             print(f"Error fetching QuickBooks data: {e}")
@@ -79,13 +100,13 @@ def main() -> int:
 
     print("Comparing Excel vs QuickBooks records...")
     try:
-        result = compare_records(excel_data, qb_data)
+        result = compare_records(excel_records, qb_data)
     except Exception as e:
         print(f"Comparison failed: {e}")
         return 1
 
     try:
-        save_json_report(result, args.output)
+        save_json_report(result, Path(args.output))
         print(f"Report saved successfully to {args.output}")
     except Exception as e:
         print(f"Failed to save report: {e}")

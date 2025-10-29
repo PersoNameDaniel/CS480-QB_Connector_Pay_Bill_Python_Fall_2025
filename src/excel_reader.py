@@ -7,7 +7,7 @@ from typing import List
 
 from openpyxl import load_workbook
 
-from .models import BillPayment
+from models import BillPayment
 
 
 def _default_company_workbook() -> Path:
@@ -66,10 +66,8 @@ def _read_account_debit_sheet(
                 else:
                     parent_str = parent_text
 
-            invoice_date = _get(row, "Invoice Date", "InvoiceDate", "Date")
-            check_amount = _get(
-                row, "Check Amount", "CheckAmount", "Amount", "Check Amt", "Amt"
-            )
+            bank_date = _get(row, "Bank Date")
+            check_amount = _get(row, "Check Amount")
 
             # Require amount to create a payment
             if check_amount in (None, ""):
@@ -81,17 +79,12 @@ def _read_account_debit_sheet(
             except (ValueError, TypeError):
                 continue
 
-            date_str = (
-                str(invoice_date).strip() if invoice_date not in (None, "") else ""
-            )
-            # Use default bank account per request — represent with empty string
-            bank_account = ""
+            date = _normalize(bank_date)
 
             payments.append(
                 BillPayment(
-                    bill=parent_str,
-                    date=date_str,
-                    bank_account=bank_account,
+                    id=parent_str,
+                    date=date,
                     amount_to_pay=amount_value,
                 )
             )

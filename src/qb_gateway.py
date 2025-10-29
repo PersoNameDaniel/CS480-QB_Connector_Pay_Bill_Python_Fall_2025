@@ -83,8 +83,8 @@ def fetch_bill_payments(company_file: str | None = None) -> List[BillPayment]:
             continue
 
         memo = (ret.findtext("Memo") or "").strip()
-        txn_date = (ret.findtext("TxnDate") or "").strip()
-        bank_account = (ret.findtext("BankAccountRef/FullName") or "").strip()
+        txn_date = ret.findtext("TxnDate")
+        # bank_account = (ret.findtext("BankAccountRef/FullName") or "").strip()
 
         # Amount to Pay = sum of AppliedToTxnRet/PaymentAmount; fallback to header total
         from decimal import Decimal, InvalidOperation
@@ -108,9 +108,8 @@ def fetch_bill_payments(company_file: str | None = None) -> List[BillPayment]:
         # Build the BillPayment model as defined in models.py
         payments.append(
             BillPayment(
-                bill=memo or "Bill Payment",
+                id=memo or "Bill Payment",
                 date=txn_date,
-                bank_account=bank_account,
                 amount_to_pay=amount_to_pay_value,
             )
         )

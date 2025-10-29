@@ -3,21 +3,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 
 @dataclass
 class BillPayment:
     """Represents a bill payment."""
 
-    bill: str
-    date: str
-    bank_account: str
+    id: str
+    date: date
     amount_to_pay: float
 
     def __str__(self) -> str:
         return (
-            f"BillPayment(bill={self.bill}, date={self.date}, "
-            f"bank_account={self.bank_account}, amount_to_pay={self.amount_to_pay})"
+            f"BillPayment(id={self.id}, date={self.date}, "
+            f"amount_to_pay={self.amount_to_pay})"
         )
 
 
