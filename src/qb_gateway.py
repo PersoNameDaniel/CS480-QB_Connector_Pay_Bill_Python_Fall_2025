@@ -12,7 +12,7 @@ try:
 except ImportError:  # pragma: no cover
     win32com = None  # type: ignore
 
-from .models import BillPayment
+from models import BillPayment
 
 
 APP_NAME = "Quickbooks Connector"  # do not chanege this
@@ -38,8 +38,8 @@ def _qb_session() -> Iterator[tuple[object, object]]:
             session.CloseConnection()
 
 
-def _normalize(h: object) -> str:
-    return str(h).strip() if h is not None else ""
+# def _normalize(h: object) -> str:
+#     return str(h).strip() if h is not None else ""
 
 
 def _parse_qb_date(value: str | None) -> date:
@@ -56,9 +56,9 @@ def _parse_qb_date(value: str | None) -> date:
 
 def _send_qbxml(qbxml: str) -> ET.Element:
     with _qb_session() as (session, ticket):
-        print(f"Sending QBXML:\n{qbxml}")  # Debug output
+        # print(f"Sending QBXML:\n{qbxml}")  # Debug output
         raw_response = session.ProcessRequest(ticket, qbxml)  # type: ignore[attr-defined]
-        print(f"Received response:\n{raw_response}")  # Debug output
+        # print(f"Received response:\n{raw_response}")  # Debug output
     return _parse_response(raw_response)
 
 
@@ -129,7 +129,7 @@ def fetch_bill_payments(company_file: str | None = None) -> List[BillPayment]:
         # Build the BillPayment model as defined in models.py
         payments.append(
             BillPayment(
-                id=memo or "invalid",
+                id=memo,
                 date=txn_date,
                 amount_to_pay=amount_to_pay_value,
             )
@@ -155,4 +155,13 @@ def _escape_xml(value: str) -> str:
     )
 
 
-__all__ = ["fetch_bill_payments", "add_bill_payment", "add_bill_payments_batch"]
+def read_data() -> List[BillPayment]:
+    """Read bill payments from QuickBooks."""
+    return fetch_bill_payments()
+
+
+__all__ = ["read_data"]
+
+if __name__ == "__main__":
+    for obj in read_data():
+        print(str(obj))
