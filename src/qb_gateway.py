@@ -38,8 +38,8 @@ def _qb_session() -> Iterator[tuple[object, object]]:
             session.CloseConnection()
 
 
-def _normalize(h: object) -> str:
-    return str(h).strip() if h is not None else ""
+# def _normalize(h: object) -> str:
+#     return str(h).strip() if h is not None else ""
 
 
 def _parse_qb_date(value: str | None) -> date:
@@ -154,5 +154,13 @@ def _escape_xml(value: str) -> str:
         .replace("'", "&apos;")
     )
 
+def read_data() -> List[BillPayment]:
+    """Read bill payments from QuickBooks."""
+    return fetch_bill_payments()
 
-__all__ = ["fetch_bill_payments", "add_bill_payment", "add_bill_payments_batch"]
+
+__all__ = ["read_data"]
+
+if __name__ == "__main__":
+    for obj in read_data():
+        print(str(obj))
