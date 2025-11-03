@@ -154,6 +154,7 @@ def _escape_xml(value: str) -> str:
         .replace("'", "&apos;")
     )
 
+
 def read_data() -> List[BillPayment]:
     """Read bill payments from QuickBooks."""
     return fetch_bill_payments()
