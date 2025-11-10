@@ -186,22 +186,20 @@ def add_bill_payments_batch(
         memo = (payment_ret.findtext("Memo") or "").strip()
         if not memo:
             continue
-        
+
         txn_date_raw = payment_ret.findtext("TxnDate")
         try:
             txn_date = _parse_qb_date(txn_date_raw) if txn_date_raw else date.today()
         except ValueError:
             txn_date = date.today()
-        
+
         amount_str = payment_ret.findtext("Amount") or "0"
         try:
             amount = float(Decimal(amount_str.strip()))
-        except:
+        except Exception:
             amount = 0.0
-        
-        added_payments.append(
-            BillPayment(id=memo, date=txn_date, amount_to_pay=amount)
-        )
+
+        added_payments.append(BillPayment(id=memo, date=txn_date, amount_to_pay=amount))
 
     return added_payments  # Return all payments that were added/acknowledged
 
@@ -241,10 +239,10 @@ def add_bill_payment(company_file: str | None, payment: BillPayment) -> BillPaym
     if payment_ret is None:
         return payment
 
-    txn_id = (payment_ret.findtext("TxnID") or "").strip()
+    # txn_id = (payment_ret.findtext("TxnID") or "").strip()
     memo = (payment_ret.findtext("Memo") or payment.id).strip()
     txn_date_raw = payment_ret.findtext("TxnDate")
-    
+
     try:
         txn_date = _parse_qb_date(txn_date_raw) if txn_date_raw else payment.date
     except ValueError:
@@ -253,7 +251,7 @@ def add_bill_payment(company_file: str | None, payment: BillPayment) -> BillPaym
     amount_str = payment_ret.findtext("Amount") or str(payment.amount_to_pay)
     try:
         amount = float(Decimal(amount_str.strip()))
-    except:
+    except Exception:
         amount = payment.amount_to_pay
 
     return BillPayment(
