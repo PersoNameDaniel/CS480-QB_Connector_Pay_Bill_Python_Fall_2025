@@ -57,8 +57,12 @@ def _parse_qb_date(value: str | None) -> date:
 def _send_qbxml(qbxml: str) -> ET.Element:
     with _qb_session() as (session, ticket):
         # print(f"Sending QBXML:\n{qbxml}")  # Debug output
-        raw_response = session.ProcessRequest(ticket, qbxml)  # type: ignore[attr-defined]
-        # print(f"Received response:\n{raw_response}")  # Debug output
+        try:
+            raw_response = session.ProcessRequest(ticket, qbxml)  # type: ignore[attr-defined]
+            # print(f"Received response:\n{raw_response}")  # Debug output
+        except Exception as e:
+            print(f"ERROR during ProcessRequest: {e}")
+            raise
     return _parse_response(raw_response)
 
 
@@ -143,26 +147,59 @@ def add_bill_payments_batch(
     """Create multiple bill payments in QuickBooks in a single batch request."""
 
     if not payments:
-        return []  # Nothing to add; return early
+        return []
 
     from decimal import Decimal
 
-    # Build the QBXML with multiple BillPaymentCheckAddRq entries
-    requests = []  # Collect individual add requests to embed in one batch
+    requests = []
     for payment in payments:
+        # Find unpaid bills for this vendor
+        unpaid_bills = fetch_unpaid_bills_for_vendor(payment.vendor)
+
+        if not unpaid_bills:
+            print(
+                f"Warning: No unpaid bills found for vendor: {payment.vendor}, skipping..."
+            )
+            continue
+
+        # Try to find a bill that matches the payment amount exactly
+        bill_txn_id = None
+        bill_amount_due = 0.0
+
+        for txn_id, amount_due in unpaid_bills:
+            if abs(amount_due - payment.amount_to_pay) < 0.01:
+                bill_txn_id = txn_id
+                bill_amount_due = amount_due
+                break
+
+        # If no exact match, use the first bill
+        if bill_txn_id is None:
+            bill_txn_id, bill_amount_due = unpaid_bills[0]
+
+        payment_amount = min(payment.amount_to_pay, bill_amount_due)
+
         # Build the QBXML snippet for this bill payment creation
         requests.append(
             f"    <BillPaymentCheckAddRq>\n"
             f"      <BillPaymentCheckAdd>\n"
             f"        <PayeeEntityRef>\n"
-            f"          <FullName>{_escape_xml(payment.id)}</FullName>\n"
+            f"          <FullName>{_escape_xml(payment.vendor)}</FullName>\n"
             f"        </PayeeEntityRef>\n"
-            f"        <TxnDate>{payment.date.isoformat()}</TxnDate>\n"
+            f"        <BankAccountRef>\n"
+            f"          <FullName>Chase</FullName>\n"
+            f"        </BankAccountRef>\n"
+            f"        <IsToBePrinted>false</IsToBePrinted>\n"
             f"        <Memo>{_escape_xml(payment.id)}</Memo>\n"
-            f"        <Amount>{Decimal(str(payment.amount_to_pay))}</Amount>\n"
+            f"        <AppliedToTxnAdd>\n"
+            f"          <TxnID>{_escape_xml(bill_txn_id)}</TxnID>\n"
+            f"          <PaymentAmount>{Decimal(str(payment_amount)):.2f}</PaymentAmount>\n"
+            f"        </AppliedToTxnAdd>\n"
             f"      </BillPaymentCheckAdd>\n"
             f"    </BillPaymentCheckAddRq>"
         )
+
+    if not requests:
+        return []
 
     qbxml = (
         '<?xml version="1.0"?>\n'
@@ -171,21 +208,19 @@ def add_bill_payments_batch(
         '  <QBXMLMsgsRq onError="continueOnError">\n' + "\n".join(requests) + "\n"
         "  </QBXMLMsgsRq>\n"
         "</QBXML>"
-    )  # Batch request enabling partial success on errors
+    )
 
     try:
-        root = _send_qbxml(qbxml)  # Submit the batch to QuickBooks
+        root = _send_qbxml(qbxml)
     except RuntimeError as exc:
-        # If the entire batch fails, return empty list
         print(f"Batch add failed: {exc}")
         return []
 
     # Parse all responses
-    added_payments: List[BillPayment] = []  # Payments confirmed/returned by QuickBooks
+    added_payments: List[BillPayment] = []
     for payment_ret in root.findall(".//BillPaymentCheckRet"):
         memo = (payment_ret.findtext("Memo") or "").strip()
-        if not memo:
-            continue
+        vendor = (payment_ret.findtext("PayeeEntityRef/FullName") or "").strip()
 
         txn_date_raw = payment_ret.findtext("TxnDate")
         try:
@@ -199,15 +234,88 @@ def add_bill_payments_batch(
         except Exception:
             amount = 0.0
 
-        added_payments.append(BillPayment(id=memo, date=txn_date, amount_to_pay=amount))
+        added_payments.append(
+            BillPayment(
+                id=memo,
+                date=txn_date,
+                amount_to_pay=amount,
+                vendor=vendor,
+            )
+        )
 
-    return added_payments  # Return all payments that were added/acknowledged
+    return added_payments
+
+
+def fetch_unpaid_bills_for_vendor(vendor_name: str) -> List[tuple[str, float]]:
+    """Fetch unpaid bills for a vendor. Returns list of (TxnID, AmountDue) tuples."""
+
+    qbxml = (
+        '<?xml version="1.0"?>\n'
+        '<?qbxml version="16.0"?>\n'
+        "<QBXML>\n"
+        '  <QBXMLMsgsRq onError="stopOnError">\n'
+        "    <BillQueryRq>\n"
+        f"      <EntityFilter>\n"
+        f"        <FullName>{_escape_xml(vendor_name)}</FullName>\n"
+        f"      </EntityFilter>\n"
+        "      <PaidStatus>NotPaidOnly</PaidStatus>\n"
+        "    </BillQueryRq>\n"
+        "  </QBXMLMsgsRq>\n"
+        "</QBXML>"
+    )
+
+    try:
+        root = _send_qbxml(qbxml)
+    except RuntimeError:
+        return []
+
+    from decimal import Decimal
+
+    bills = []
+    for bill_ret in root.findall(".//BillRet"):
+        txn_id = (bill_ret.findtext("TxnID") or "").strip()
+        amount_due_str = bill_ret.findtext("AmountDue") or "0"
+        try:
+            amount_due = float(Decimal(amount_due_str.strip()))
+            if txn_id and amount_due > 0:
+                print(f"Found unpaid bill: TxnID={txn_id}, AmountDue={amount_due}")
+                bills.append((txn_id, amount_due))
+        except Exception:
+            continue
+
+    return bills
 
 
 def add_bill_payment(company_file: str | None, payment: BillPayment) -> BillPayment:
     """Create a single bill payment check in QuickBooks and return the stored record."""
 
     from decimal import Decimal
+
+    # Find unpaid bills for this vendor
+    unpaid_bills = fetch_unpaid_bills_for_vendor(payment.vendor)
+
+    if not unpaid_bills:
+        raise RuntimeError(f"No unpaid bills found for vendor: {payment.vendor}")
+
+    # Try to find a bill that matches the payment amount exactly
+    bill_txn_id = None
+    bill_amount_due = 0.0
+
+    for txn_id, amount_due in unpaid_bills:
+        if abs(amount_due - payment.amount_to_pay) < 0.01:  # Match within 1 cent
+            bill_txn_id = txn_id
+            bill_amount_due = amount_due
+            print(f"Matched bill by amount: TxnID={txn_id}, Amount={amount_due}")
+            break
+
+    # If no exact match, use the first bill
+    if bill_txn_id is None:
+        bill_txn_id, bill_amount_due = unpaid_bills[0]
+        print(
+            f"No exact match found, using first bill: TxnID={bill_txn_id}, Amount={bill_amount_due}"
+        )
+
+    payment_amount = min(payment.amount_to_pay, bill_amount_due)
 
     qbxml = (
         '<?xml version="1.0"?>\n'
@@ -217,16 +325,27 @@ def add_bill_payment(company_file: str | None, payment: BillPayment) -> BillPaym
         "    <BillPaymentCheckAddRq>\n"
         "      <BillPaymentCheckAdd>\n"
         f"        <PayeeEntityRef>\n"
-        f"          <FullName>{_escape_xml(payment.id)}</FullName>\n"
+        f"          <FullName>{_escape_xml(payment.vendor)}</FullName>\n"
         f"        </PayeeEntityRef>\n"
-        f"        <TxnDate>{payment.date.isoformat()}</TxnDate>\n"
+        f"        <BankAccountRef>\n"
+        f"          <FullName>Chase</FullName>\n"
+        f"        </BankAccountRef>\n"
+        f"        <IsToBePrinted>false</IsToBePrinted>\n"
         f"        <Memo>{_escape_xml(payment.id)}</Memo>\n"
-        f"        <Amount>{Decimal(str(payment.amount_to_pay))}</Amount>\n"
+        f"        <AppliedToTxnAdd>\n"
+        f"          <TxnID>{_escape_xml(bill_txn_id)}</TxnID>\n"
+        f"          <PaymentAmount>{Decimal(str(payment_amount)):.2f}</PaymentAmount>\n"
+        f"        </AppliedToTxnAdd>\n"
         "      </BillPaymentCheckAdd>\n"
         "    </BillPaymentCheckAddRq>\n"
         "  </QBXMLMsgsRq>\n"
         "</QBXML>"
     )
+
+    # print("=" * 60)
+    # print("QBXML being sent:")
+    # print(qbxml)
+    # print("=" * 60)
 
     try:
         root = _send_qbxml(qbxml)
@@ -239,8 +358,8 @@ def add_bill_payment(company_file: str | None, payment: BillPayment) -> BillPaym
     if payment_ret is None:
         return payment
 
-    # txn_id = (payment_ret.findtext("TxnID") or "").strip()
     memo = (payment_ret.findtext("Memo") or payment.id).strip()
+    vendor = (payment_ret.findtext("PayeeEntityRef/FullName") or payment.vendor).strip()
     txn_date_raw = payment_ret.findtext("TxnDate")
 
     try:
@@ -258,6 +377,7 @@ def add_bill_payment(company_file: str | None, payment: BillPayment) -> BillPaym
         id=memo,
         date=txn_date,
         amount_to_pay=amount,
+        vendor=vendor,
     )
 
 

@@ -13,11 +13,12 @@ class BillPayment:
     id: str
     date: date
     amount_to_pay: float
+    vendor: str = ""
 
     def __str__(self) -> str:
         return (
             f"BillPayment(id={self.id}, date={self.date}, "
-            f"amount_to_pay={self.amount_to_pay})"
+            f"amount_to_pay={self.amount_to_pay}, vendor={self.vendor})"
         )
 
 
