@@ -137,12 +137,130 @@ def fetch_bill_payments(company_file: str | None = None) -> List[BillPayment]:
     return payments
 
 
-def add_bill_payments_batch():
-    raise NotImplementedError
+def add_bill_payments_batch(
+    company_file: str | None, payments: List[BillPayment]
+) -> List[BillPayment]:
+    """Create multiple bill payments in QuickBooks in a single batch request."""
+
+    if not payments:
+        return []  # Nothing to add; return early
+
+    from decimal import Decimal
+
+    # Build the QBXML with multiple BillPaymentCheckAddRq entries
+    requests = []  # Collect individual add requests to embed in one batch
+    for payment in payments:
+        # Build the QBXML snippet for this bill payment creation
+        requests.append(
+            f"    <BillPaymentCheckAddRq>\n"
+            f"      <BillPaymentCheckAdd>\n"
+            f"        <PayeeEntityRef>\n"
+            f"          <FullName>{_escape_xml(payment.id)}</FullName>\n"
+            f"        </PayeeEntityRef>\n"
+            f"        <TxnDate>{payment.date.isoformat()}</TxnDate>\n"
+            f"        <Memo>{_escape_xml(payment.id)}</Memo>\n"
+            f"        <Amount>{Decimal(str(payment.amount_to_pay))}</Amount>\n"
+            f"      </BillPaymentCheckAdd>\n"
+            f"    </BillPaymentCheckAddRq>"
+        )
+
+    qbxml = (
+        '<?xml version="1.0"?>\n'
+        '<?qbxml version="16.0"?>\n'
+        "<QBXML>\n"
+        '  <QBXMLMsgsRq onError="continueOnError">\n' + "\n".join(requests) + "\n"
+        "  </QBXMLMsgsRq>\n"
+        "</QBXML>"
+    )  # Batch request enabling partial success on errors
+
+    try:
+        root = _send_qbxml(qbxml)  # Submit the batch to QuickBooks
+    except RuntimeError as exc:
+        # If the entire batch fails, return empty list
+        print(f"Batch add failed: {exc}")
+        return []
+
+    # Parse all responses
+    added_payments: List[BillPayment] = []  # Payments confirmed/returned by QuickBooks
+    for payment_ret in root.findall(".//BillPaymentCheckRet"):
+        memo = (payment_ret.findtext("Memo") or "").strip()
+        if not memo:
+            continue
+        
+        txn_date_raw = payment_ret.findtext("TxnDate")
+        try:
+            txn_date = _parse_qb_date(txn_date_raw) if txn_date_raw else date.today()
+        except ValueError:
+            txn_date = date.today()
+        
+        amount_str = payment_ret.findtext("Amount") or "0"
+        try:
+            amount = float(Decimal(amount_str.strip()))
+        except:
+            amount = 0.0
+        
+        added_payments.append(
+            BillPayment(id=memo, date=txn_date, amount_to_pay=amount)
+        )
+
+    return added_payments  # Return all payments that were added/acknowledged
 
 
-def add_bill_payment():
-    raise NotImplementedError
+def add_bill_payment(company_file: str | None, payment: BillPayment) -> BillPayment:
+    """Create a single bill payment check in QuickBooks and return the stored record."""
+
+    from decimal import Decimal
+
+    qbxml = (
+        '<?xml version="1.0"?>\n'
+        '<?qbxml version="16.0"?>\n'
+        "<QBXML>\n"
+        '  <QBXMLMsgsRq onError="stopOnError">\n'
+        "    <BillPaymentCheckAddRq>\n"
+        "      <BillPaymentCheckAdd>\n"
+        f"        <PayeeEntityRef>\n"
+        f"          <FullName>{_escape_xml(payment.id)}</FullName>\n"
+        f"        </PayeeEntityRef>\n"
+        f"        <TxnDate>{payment.date.isoformat()}</TxnDate>\n"
+        f"        <Memo>{_escape_xml(payment.id)}</Memo>\n"
+        f"        <Amount>{Decimal(str(payment.amount_to_pay))}</Amount>\n"
+        "      </BillPaymentCheckAdd>\n"
+        "    </BillPaymentCheckAddRq>\n"
+        "  </QBXMLMsgsRq>\n"
+        "</QBXML>"
+    )
+
+    try:
+        root = _send_qbxml(qbxml)
+    except RuntimeError as exc:
+        if "already exists" in str(exc).lower():
+            return payment
+        raise
+
+    payment_ret = root.find(".//BillPaymentCheckRet")
+    if payment_ret is None:
+        return payment
+
+    txn_id = (payment_ret.findtext("TxnID") or "").strip()
+    memo = (payment_ret.findtext("Memo") or payment.id).strip()
+    txn_date_raw = payment_ret.findtext("TxnDate")
+    
+    try:
+        txn_date = _parse_qb_date(txn_date_raw) if txn_date_raw else payment.date
+    except ValueError:
+        txn_date = payment.date
+
+    amount_str = payment_ret.findtext("Amount") or str(payment.amount_to_pay)
+    try:
+        amount = float(Decimal(amount_str.strip()))
+    except:
+        amount = payment.amount_to_pay
+
+    return BillPayment(
+        id=memo,
+        date=txn_date,
+        amount_to_pay=amount,
+    )
 
 
 def _escape_xml(value: str) -> str:
