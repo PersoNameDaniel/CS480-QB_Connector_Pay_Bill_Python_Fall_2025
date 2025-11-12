@@ -7,7 +7,7 @@ from datetime import date
 def add_single_payment():
     payment = BillPayment(
         id="9954",
-        date=date(2025, 11, 20),
+        date=date(2025, 11, 10),
         amount_to_pay=1500.00,
         vendor="ATT(cell phone)",
     )

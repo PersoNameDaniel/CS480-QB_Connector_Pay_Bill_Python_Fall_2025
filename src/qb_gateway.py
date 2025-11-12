@@ -185,6 +185,7 @@ def add_bill_payments_batch(
             f"        <PayeeEntityRef>\n"
             f"          <FullName>{_escape_xml(payment.vendor)}</FullName>\n"
             f"        </PayeeEntityRef>\n"
+            f"        <TxnDate>{payment.date.isoformat()}</TxnDate>\n"
             f"        <BankAccountRef>\n"
             f"          <FullName>Chase</FullName>\n"
             f"        </BankAccountRef>\n"
@@ -327,6 +328,7 @@ def add_bill_payment(company_file: str | None, payment: BillPayment) -> BillPaym
         f"        <PayeeEntityRef>\n"
         f"          <FullName>{_escape_xml(payment.vendor)}</FullName>\n"
         f"        </PayeeEntityRef>\n"
+        f"        <TxnDate>{payment.date.isoformat()}</TxnDate>\n"
         f"        <BankAccountRef>\n"
         f"          <FullName>Chase</FullName>\n"
         f"        </BankAccountRef>\n"
@@ -342,10 +344,10 @@ def add_bill_payment(company_file: str | None, payment: BillPayment) -> BillPaym
         "</QBXML>"
     )
 
-    # print("=" * 60)
-    # print("QBXML being sent:")
-    # print(qbxml)
-    # print("=" * 60)
+    print("=" * 60)
+    print("QBXML being sent:")
+    print(qbxml)
+    print("=" * 60)
 
     try:
         root = _send_qbxml(qbxml)
