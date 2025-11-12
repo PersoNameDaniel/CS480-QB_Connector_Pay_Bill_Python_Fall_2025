@@ -344,10 +344,10 @@ def add_bill_payment(company_file: str | None, payment: BillPayment) -> BillPaym
         "</QBXML>"
     )
 
-    print("=" * 60)
-    print("QBXML being sent:")
-    print(qbxml)
-    print("=" * 60)
+    # print("=" * 60)
+    # print("QBXML being sent:")
+    # print(qbxml)
+    # print("=" * 60)
 
     try:
         root = _send_qbxml(qbxml)
