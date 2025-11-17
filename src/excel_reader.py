@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List
 
 from openpyxl import load_workbook
+
+from models import BillPayment
 
 
 def _default_company_workbook() -> Path:
@@ -13,18 +15,13 @@ def _default_company_workbook() -> Path:
     return Path(__file__).resolve().parents[1] / "company_data.xlsx"
 
 
-def _read_sheet_as_dicts(
+def _normalize(h: object) -> str:
+    return str(h).strip() if h is not None else ""
+
+
+def _read_account_debit_sheet(
     workbook_path: Path, sheet_name: str
-) -> List[Dict[str, object]]:
-    """Read the given worksheet and return a list of dicts mapping header -> value.
-
-    Each returned row dict will include:
-      - the original columns mapped by header (normalized to str)
-      - 'source': 'excel'
-      - '__sheet__': the worksheet name
-
-    Raises FileNotFoundError if workbook is missing and ValueError if the sheet is not found.
-    """
+) -> List[BillPayment]:
     workbook_path = Path(workbook_path)
     if not workbook_path.exists():
         raise FileNotFoundError(f"Workbook not found: {workbook_path}")
@@ -41,76 +38,96 @@ def _read_sheet_as_dicts(
         if header_row is None:
             return []
 
-        # Normalize headers; empty headers get a generated name
-        headers = [
-            (
-                str(h).strip()
-                if h is not None and str(h).strip() != ""
-                else f"column_{i}"
-            )
-            for i, h in enumerate(header_row)
-        ]
+        headers = [_normalize(h) for h in header_row]
+        index = {h.lower(): i for i, h in enumerate(headers)}
 
-        results: List[Dict[str, object]] = []
+        def _get(row: tuple, *names: str):
+            for name in names:
+                idx = index.get(name.lower())
+                if idx is not None and idx < len(row):
+                    return row[idx]
+            return None
+
+        payments: List[BillPayment] = []
         for row in rows:
-            row_dict: Dict[str, object] = {}
-            for i, header in enumerate(headers):
-                value = row[i] if i < len(row) else None
-                row_dict[header] = value
-            row_dict["source"] = "excel"
-            row_dict["__sheet__"] = sheet_name
-            results.append(row_dict)
+            # Parent ID - Child ID -> take only parent (left of " - ")
+            parent_child = _get(
+                row, "Parent ID - Child ID", "Parent ID", "ParentID", "Parent"
+            )
+            if parent_child in (None, ""):
+                # try alternative columns that may contain parent id
+                parent_child = _get(row, "Parent ID", "Parent")
 
-        return results
+            parent_str = ""
+            if parent_child not in (None, ""):
+                parent_text = str(parent_child).strip()
+                if " - " in parent_text:
+                    parent_str = parent_text.split(" - ", 1)[0].strip()
+                else:
+                    parent_str = parent_text
+
+            bank_date = _get(row, "Bank Date")
+            check_amount = _get(row, "Check Amount")
+
+            # Require amount to create a payment
+            if check_amount in (None, ""):
+                continue
+
+            # convert amount
+            try:
+                amount_value = float(str(check_amount).strip())
+            except (ValueError, TypeError):
+                continue
+
+            date = _normalize(bank_date)
+
+            payments.append(
+                BillPayment(
+                    id=parent_str,
+                    date=date,
+                    amount_to_pay=amount_value,
+                )
+            )
+
+        return payments
     finally:
         wb.close()
 
 
-def extract_account_debit_vendor(
-    workbook_path: Optional[Path] = None,
-) -> List[Dict[str, object]]:
-    """Return rows from the 'account debit vendor' worksheet as list of dicts.
-
-    If workbook_path is None, company_data.xlsx at the project root is used.
-    """
-    path = workbook_path or _default_company_workbook()
-    return _read_sheet_as_dicts(path, "account debit vendor")
+def extract_account_debit_vendor(workbook_path: Path) -> List[BillPayment]:
+    """Read 'account debit vendor' and return BillPayment list using parent id and default bank."""
+    return _read_account_debit_sheet(workbook_path, "account debit vendor")
 
 
-def extract_account_debit_nonvendor(
-    workbook_path: Optional[Path] = None,
-) -> List[Dict[str, object]]:
-    """Return rows from the 'account debit nonvendor' worksheet as list of dicts.
-
-    If workbook_path is None, company_data.xlsx at the project root is used.
-    """
-    path = workbook_path or _default_company_workbook()
-    return _read_sheet_as_dicts(path, "account debit nonvendor")
-
-
-def read_excel_data(workbook_path: str, sheet_name: str) -> List[Dict[str, object]]:
-    """Generic entry point for reading any Excel sheet.
-
-    Args:
-        workbook_path: Path to Excel workbook.
-        sheet_name: Name of the sheet to extract.
-
-    Returns:
-        A list of dictionaries mapping column headers to cell values.
-    """
-    path = Path(workbook_path)
-
-    # Automatically pick correct helper based on sheet name
-    if sheet_name.lower().strip() == "account debit vendor":
-        return extract_account_debit_vendor(path)
-    elif sheet_name.lower().strip() == "account debit nonvendor":
-        return extract_account_debit_nonvendor(path)
-    else:
-        return _read_sheet_as_dicts(path, sheet_name)
+def extract_account_debit_nonvendor(workbook_path: Path) -> List[BillPayment]:
+    """Read 'account debit nonvendor' and return BillPayment list using parent id and default bank."""
+    return _read_account_debit_sheet(workbook_path, "account debit nonvendor")
 
 
 __all__ = [
     "extract_account_debit_vendor",
     "extract_account_debit_nonvendor",
-    "read_excel_data",
 ]
+
+
+if __name__ == "__main__":  # pragma: no cover - manual invocation
+    import sys
+
+    try:
+        wb = Path("company_data.xlsx")
+        vendor_rows = extract_account_debit_vendor(wb)
+        nonvendor_rows = extract_account_debit_nonvendor(wb)
+
+        print(f"Vendor rows: {len(vendor_rows)}")
+        for p in vendor_rows[:10]:
+            print(p)
+
+        print(f"\nNon-vendor rows: {len(nonnvendor_rows := nonvendor_rows)}")
+        for p in nonnvendor_rows[:10]:
+            print(p)
+    except Exception as e:
+        print(f"Error: {e}")
+        print(
+            "Usage: python src/excel_reader.py (run from project root where company_data.xlsx lives)"
+        )
+        sys.exit(1)
