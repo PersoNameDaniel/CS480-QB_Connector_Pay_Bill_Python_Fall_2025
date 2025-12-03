@@ -68,6 +68,9 @@ def _read_account_debit_sheet(
 
             bank_date = _get(row, "Bank Date")
             check_amount = _get(row, "Check Amount")
+            # is_shipping = _get(row, "Comments") == "Shipping Charge"
+            if _get(row, "Comments") == "Shipping Charge":
+                continue  # skip shipping charges
 
             # Require amount to create a payment
             if check_amount in (None, ""):
@@ -86,6 +89,7 @@ def _read_account_debit_sheet(
                     id=parent_str,
                     date=date,
                     amount_to_pay=amount_value,
+                    # is_shipping=is_shipping,
                 )
             )
 

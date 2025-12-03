@@ -14,6 +14,7 @@ class BillPayment:
     date: date
     amount_to_pay: float
     vendor: str = ""
+    # is_shipping: bool
 
     def __str__(self) -> str:
         return (
