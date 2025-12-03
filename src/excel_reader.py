@@ -9,6 +9,8 @@ from openpyxl import load_workbook
 
 from .models import BillPayment
 
+from datetime import datetime, date as _date, timedelta
+
 
 def _default_company_workbook() -> Path:
     # company_data.xlsx expected in project root (one level above src/)
@@ -82,7 +84,30 @@ def _read_account_debit_sheet(
             except (ValueError, TypeError):
                 continue
 
-            date = _normalize(bank_date)
+            # date = _normalize(bank_date)
+            date = None
+            if isinstance(bank_date, _date):
+                date = bank_date
+            elif isinstance(bank_date, datetime):
+                date = bank_date.date()
+            elif isinstance(bank_date, (int, float)):
+                try:
+                    excel_epoch = datetime(1899, 12, 30)
+                    date = (excel_epoch + timedelta(days=int(bank_date))).date()
+                except Exception:
+                    date = None
+            else:
+                s = _normalize(bank_date)
+                if s:
+                    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
+                        try:
+                            date = datetime.strptime(s, fmt).date()
+                            break
+                        except ValueError:
+                            continue
+
+            if date is None:
+                continue
 
             payments.append(
                 BillPayment(
