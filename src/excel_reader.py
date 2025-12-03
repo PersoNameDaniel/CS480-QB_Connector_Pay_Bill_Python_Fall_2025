@@ -7,7 +7,7 @@ from typing import List
 
 from openpyxl import load_workbook
 
-from models import BillPayment
+from .models import BillPayment
 
 
 def _default_company_workbook() -> Path:
