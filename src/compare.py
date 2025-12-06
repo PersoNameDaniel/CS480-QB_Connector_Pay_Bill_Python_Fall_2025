@@ -1,101 +1,198 @@
-from typing import List, Dict, Any
+"""
+Bill Payment Comparer Module
+
+Compares payment data between Excel and QuickBooks for existing bills.
+"""
+
+from typing import Dict, List, Any
 from decimal import Decimal
 
+from .models import BillPayment
 
-def normalize_id(value: Any) -> int | str:
-    """Normalize ID to int if possible, otherwise string."""
+
+def normalize_amount(value: Any) -> float:
+    """Convert amount to float for comparison."""
+    if value is None:
+        return 0.0
+    if isinstance(value, Decimal):
+        return float(value)
     try:
-        return int(value)
+        return float(value)
     except (ValueError, TypeError):
-        return str(value).strip() if value is not None else ""
+        return 0.0
 
 
-def compare_records(
-    excel_data: List[Dict[str, Any]],
-    qb_data: List[Dict[str, Any]],
+def get_bill_id(bill: Dict[str, Any]) -> str:
+    """
+    Extract bill ID from bill record.
+    Uses Parent-Child ID if child exists, otherwise uses Parent ID.
+    """
+    parent_id = bill.get("Parent ID", "").strip()
+    child_id = bill.get("Child ID", "").strip()
+    
+    if child_id:
+        return f"{parent_id}-{child_id}"
+    return parent_id
+
+
+def compare_bill_payments(
+    excel_bills: List[Dict[str, Any]],
+    qb_bills: List[Dict[str, Any]],
+    qb_payments: List[Dict[str, Any]],
     amount_tolerance: float = 0.01,
 ) -> Dict[str, Any]:
-    """Compare financial records from Excel and QuickBooks."""
-
-    # 🔹 Normalize Excel data into standard form
-    normalized_excel: List[Dict[str, Any]] = []
-    for record in excel_data:
-        record_id = (
-            record.get("Parent ID")
-            or record.get("Child ID")
-            or record.get("Invoice Num")
-            or record.get("id")
-        )
-        amount = (
-            record.get("Invoice Amount")
-            or record.get("Check Amount")
-            or record.get("AP")
-            or record.get("amount")
-        )
-        if record_id is not None and amount is not None:
-            normalized_excel.append(
-                {"id": normalize_id(record_id), "amount": float(amount)}
-            )
-
-    # 🔹 Normalize QuickBooks data (if any)
-    normalized_qb: List[Dict[str, Any]] = []
-    for record in qb_data:
-        record_id = (
-            record.get("id")
-            or record.get("TxnID")
-            or record.get("bill")
-            or record.get("Name")
-        )
-        amount = (
-            record.get("amount")
-            or record.get("amount_to_pay")
-            or record.get("TotalAmount")
-        )
-        if record_id is not None and amount is not None:
-            normalized_qb.append(
-                {"id": normalize_id(record_id), "amount": float(amount)}
-            )
-
-    # 🔹 Validate
-    for record in normalized_excel + normalized_qb:
-        if "id" not in record or "amount" not in record:
-            raise KeyError(f"Record missing required fields: {record}")
-        if not isinstance(record["amount"], (int, float, Decimal)):
-            raise TypeError(f"Amount must be numeric: {record}")
-
-    discrepancies: Dict[str, Any] = {
-        "missing_in_excel": [],
-        "missing_in_qb": [],
-        "amount_mismatches": [],
+    """
+    Compare bill payment data between Excel and QuickBooks.
+    
+    Args:
+        excel_bills: List of bills from Excel with payment data
+        qb_bills: List of bills from QuickBooks (with TxnIDs)
+        qb_payments: List of existing payments from QuickBooks
+        amount_tolerance: Maximum acceptable difference for amount comparisons
+        
+    Returns:
+        Dict containing:
+            - same_records: List of matching BillPayment records
+            - conflicts: List of payment discrepancies
+            - payments_to_add: List of BillPayment objects to add to QB
+    """
+    
+    # Index Excel bills by ID for O(1) lookup
+    excel_by_id: Dict[str, Dict[str, Any]] = {
+        get_bill_id(bill): bill 
+        for bill in excel_bills 
+        if get_bill_id(bill)
     }
-
-    excel_dict = {normalize_id(r["id"]): r for r in normalized_excel}
-    qb_dict = {normalize_id(r["id"]): r for r in normalized_qb}
-
-    # 🔹 Missing in Excel
-    for qb_id, qb_record in qb_dict.items():
-        if qb_id not in excel_dict:
-            discrepancies["missing_in_excel"].append(qb_record)
-
-    # 🔹 Missing in QuickBooks
-    for excel_id, excel_record in excel_dict.items():
-        if excel_id not in qb_dict:
-            discrepancies["missing_in_qb"].append(excel_record)
-
-    # 🔹 Amount mismatches
-    for record_id in set(excel_dict.keys()) & set(qb_dict.keys()):
-        excel_amt = float(excel_dict[record_id]["amount"])
-        qb_amt = float(qb_dict[record_id]["amount"])
-        if abs(excel_amt - qb_amt) > amount_tolerance:
-            discrepancies["amount_mismatches"].append(
-                {"id": record_id, "excel_amount": excel_amt, "qb_amount": qb_amt}
+    
+    # Index QB bills by TxnID for O(1) lookup
+    qb_by_txn: Dict[str, Dict[str, Any]] = {
+        bill.get("TxnID"): bill 
+        for bill in qb_bills 
+        if bill.get("TxnID")
+    }
+    
+    # Index QB payments by TxnID
+    qb_payments_by_txn: Dict[str, List[Dict[str, Any]]] = {}
+    for payment in qb_payments:
+        txn_id = payment.get("TxnID")
+        if txn_id:
+            if txn_id not in qb_payments_by_txn:
+                qb_payments_by_txn[txn_id] = []
+            qb_payments_by_txn[txn_id].append(payment)
+    
+    # Results
+    results = {
+        "same_records": [],
+        "conflicts": [],
+        "payments_to_add": [],
+    }
+    
+    # Compare bills that exist in both systems
+    for bill_id in excel_by_id.keys() & qb_by_txn.keys():
+        excel_bill = excel_by_id[bill_id]
+        qb_bill = qb_by_txn[bill_id]
+        txn_id = qb_bill.get("TxnID")
+        
+        # Extract payment info from Excel
+        excel_amount = normalize_amount(
+            excel_bill.get("Payment Amount") or excel_bill.get("Check Amount")
+        )
+        excel_date = excel_bill.get("Payment Date") or excel_bill.get("Check Date")
+        
+        # Skip if no payment in Excel
+        if excel_amount == 0.0:
+            continue
+        
+        # Get existing QB payments for this bill
+        qb_bill_payments = qb_payments_by_txn.get(txn_id, [])
+        
+        # If no QB payment exists, add it
+        if not qb_bill_payments:
+            payment = BillPayment(
+                id=bill_id,
+                date=excel_date,
+                amount_to_pay=excel_amount,
+                vendor=qb_bill.get("vendor_name", ""),
             )
+            results["payments_to_add"].append(payment)
+            continue
+        
+        # Compare payment data
+        payment_matched = False
+        for qb_payment in qb_bill_payments:
+            qb_amount = normalize_amount(
+                qb_payment.get("amount") or qb_payment.get("TotalAmount")
+            )
+            qb_date = qb_payment.get("payment_date") or qb_payment.get("TxnDate")
+            
+            amount_match = abs(excel_amount - qb_amount) <= amount_tolerance
+            date_match = str(excel_date) == str(qb_date)
+            
+            if amount_match and date_match:
+                payment = BillPayment(
+                    id=bill_id,
+                    date=excel_date,
+                    amount_to_pay=excel_amount,
+                    vendor=qb_bill.get("vendor_name", ""),
+                )
+                results["same_records"].append(payment)
+                payment_matched = True
+                break
+        
+        # Record conflict if no match found
+        if not payment_matched:
+            results["conflicts"].append({
+                "bill_id": bill_id,
+                "txn_id": txn_id,
+                "reason": "payment_mismatch",
+                "excel_payment": {
+                    "amount": excel_amount,
+                    "date": excel_date,
+                },
+                "qb_payments": [
+                    {
+                        "amount": normalize_amount(p.get("amount") or p.get("TotalAmount")),
+                        "date": p.get("payment_date") or p.get("TxnDate"),
+                    }
+                    for p in qb_bill_payments
+                ],
+            })
+    
+    # Check for QB payments with no Excel counterpart (conflicts)
+    for txn_id, qb_bill in qb_by_txn.items():
+        # Get the Excel bill ID equivalent
+        bill_id = qb_bill.get("RefNumber") or qb_bill.get("parent_id")
+        
+        # Skip if already processed (bill exists in Excel)
+        if bill_id in excel_by_id:
+            continue
+        
+        # Payment in QB but not in Excel = conflict
+        if txn_id in qb_payments_by_txn:
+            results["conflicts"].append({
+                "bill_id": bill_id,
+                "txn_id": txn_id,
+                "reason": "payment_in_qb_only",
+                "excel_payment": None,
+                "qb_payments": [
+                    {
+                        "amount": normalize_amount(p.get("amount") or p.get("TotalAmount")),
+                        "date": p.get("payment_date") or p.get("TxnDate"),
+                    }
+                    for p in qb_payments_by_txn[txn_id]
+                ],
+            })
+    
+    return results
 
-    # 🔹 Sort results
-    for key in discrepancies:
-        discrepancies[key].sort(key=lambda x: x["id"] if isinstance(x, dict) else x)
 
-    return discrepancies
+def main():
+    """Main function."""
+    print("Bill Payment Comparer Module loaded successfully.")
 
 
-__all__ = ["compare_records"]
+if __name__ == "__main__":
+    main()
+
+
+__all__ = ["compare_bill_payments"]
