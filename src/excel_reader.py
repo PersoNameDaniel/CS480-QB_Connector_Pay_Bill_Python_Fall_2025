@@ -53,20 +53,16 @@ def _read_account_debit_sheet(
         payments: List[BillPayment] = []
         for row in rows:
             # Parent ID - Child ID -> take only parent (left of " - ")
-            parent_child = _get(
-                row, "Parent ID - Child ID", "Parent ID", "ParentID", "Parent"
-            )
-            if parent_child in (None, ""):
-                # try alternative columns that may contain parent id
-                parent_child = _get(row, "Parent ID", "Parent")
+            parent_id = _get(row, "Parent ID")
+            child_id = _get(row, "Child ID")
 
             parent_str = ""
-            if parent_child not in (None, ""):
-                parent_text = str(parent_child).strip()
-                if " - " in parent_text:
-                    parent_str = parent_text.split(" - ", 1)[0].strip()
-                else:
-                    parent_str = parent_text
+            if parent_id not in (None, ""):
+                parent_str = str(parent_id).strip()
+                # Concatenate with child if child exists
+                if child_id not in (None, ""):
+                    child_str = str(child_id).strip()
+                    parent_str = f"{parent_str} - {child_str}"
 
             bank_date = _get(row, "Bank Date")
             check_amount = _get(row, "Check Amount")
