@@ -1,0 +1,56 @@
+{
+  "missing_in_excel": [],
+  "missing_in_qb": [
+    {
+      "source": "excel",
+      "id": "44783-46191",
+      "date": "2024-03-22T00:00:00",
+      "amount_to_pay": 14000.0,
+      "vendor": ""
+    },
+    {
+      "source": "excel",
+      "id": "45017-46193",
+      "date": "2024-04-08T00:00:00",
+      "amount_to_pay": 6000.0,
+      "vendor": ""
+    },
+    {
+      "source": "excel",
+      "id": "44733",
+      "date": "2024-03-12T00:00:00",
+      "amount_to_pay": 3576.19,
+      "vendor": ""
+    },
+    {
+      "source": "excel",
+      "id": "44664",
+      "date": "2024-01-03T00:00:00",
+      "amount_to_pay": 2240.0,
+      "vendor": ""
+    },
+    {
+      "source": "excel",
+      "id": "44092",
+      "date": "2024-01-09T00:00:00",
+      "amount_to_pay": 400.0,
+      "vendor": ""
+    },
+    {
+      "source": "excel",
+      "id": "44094",
+      "date": "2024-01-09T00:00:00",
+      "amount_to_pay": 250.0,
+      "vendor": ""
+    },
+    {
+      "source": "excel",
+      "id": "44091",
+      "date": "2024-01-09T00:00:00",
+      "amount_to_pay": 400.0,
+      "vendor": ""
+    }
+  ],
+  "amount_mismatches": [],
+  "amount_matches": []
+}

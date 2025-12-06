@@ -62,7 +62,7 @@ def _read_account_debit_sheet(
                 # Concatenate with child if child exists
                 if child_id not in (None, ""):
                     child_str = str(child_id).strip()
-                    parent_str = f"{parent_str} - {child_str}"
+                    parent_str = f"{parent_str}-{child_str}"
 
             bank_date = _get(row, "Bank Date")
             check_amount = _get(row, "Check Amount")

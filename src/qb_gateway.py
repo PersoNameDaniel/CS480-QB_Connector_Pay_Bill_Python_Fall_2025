@@ -12,7 +12,7 @@ try:
 except ImportError:  # pragma: no cover
     win32com = None  # type: ignore
 
-from models import BillPayment
+from .models import BillPayment
 
 
 APP_NAME = "Quickbooks Connector"  # do not chanege this
@@ -238,6 +238,7 @@ def add_bill_payments_batch(
 
         added_payments.append(
             BillPayment(
+                source="",
                 id=memo,
                 date=txn_date,
                 amount_to_pay=amount,
@@ -286,102 +287,6 @@ def fetch_unpaid_bills_for_vendor(vendor_name: str) -> List[tuple[str, float]]:
             continue
 
     return bills
-
-
-def add_bill_payment(company_file: str | None, payment: BillPayment) -> BillPayment:
-    """Create a single bill payment check in QuickBooks and return the stored record."""
-
-    from decimal import Decimal
-
-    # Find unpaid bills for this vendor
-    unpaid_bills = fetch_unpaid_bills_for_vendor(payment.vendor)
-
-    if not unpaid_bills:
-        raise RuntimeError(f"No unpaid bills found for vendor: {payment.vendor}")
-
-    # Try to find a bill that matches the payment amount exactly
-    bill_txn_id = None
-    bill_amount_due = 0.0
-
-    for txn_id, amount_due in unpaid_bills:
-        if abs(amount_due - payment.amount_to_pay) < 0.01:  # Match within 1 cent
-            bill_txn_id = txn_id
-            bill_amount_due = amount_due
-            print(f"Matched bill by amount: TxnID={txn_id}, Amount={amount_due}")
-            break
-
-    # If no exact match, use the first bill
-    if bill_txn_id is None:
-        bill_txn_id, bill_amount_due = unpaid_bills[0]
-        print(
-            f"No exact match found, using first bill: TxnID={bill_txn_id}, Amount={bill_amount_due}"
-        )
-
-    payment_amount = min(payment.amount_to_pay, bill_amount_due)
-
-    qbxml = (
-        '<?xml version="1.0"?>\n'
-        '<?qbxml version="16.0"?>\n'
-        "<QBXML>\n"
-        '  <QBXMLMsgsRq onError="stopOnError">\n'
-        "    <BillPaymentCheckAddRq>\n"
-        "      <BillPaymentCheckAdd>\n"
-        f"        <PayeeEntityRef>\n"
-        f"          <FullName>{_escape_xml(payment.vendor)}</FullName>\n"
-        f"        </PayeeEntityRef>\n"
-        f"        <TxnDate>{payment.date.isoformat()}</TxnDate>\n"
-        f"        <BankAccountRef>\n"
-        f"          <FullName>Chase</FullName>\n"
-        f"        </BankAccountRef>\n"
-        f"        <IsToBePrinted>false</IsToBePrinted>\n"
-        f"        <Memo>{_escape_xml(payment.id)}</Memo>\n"
-        f"        <AppliedToTxnAdd>\n"
-        f"          <TxnID>{_escape_xml(bill_txn_id)}</TxnID>\n"
-        f"          <PaymentAmount>{Decimal(str(payment_amount)):.2f}</PaymentAmount>\n"
-        f"        </AppliedToTxnAdd>\n"
-        "      </BillPaymentCheckAdd>\n"
-        "    </BillPaymentCheckAddRq>\n"
-        "  </QBXMLMsgsRq>\n"
-        "</QBXML>"
-    )
-
-    # print("=" * 60)
-    # print("QBXML being sent:")
-    # print(qbxml)
-    # print("=" * 60)
-
-    try:
-        root = _send_qbxml(qbxml)
-    except RuntimeError as exc:
-        if "already exists" in str(exc).lower():
-            return payment
-        raise
-
-    payment_ret = root.find(".//BillPaymentCheckRet")
-    if payment_ret is None:
-        return payment
-
-    memo = (payment_ret.findtext("Memo") or payment.id).strip()
-    vendor = (payment_ret.findtext("PayeeEntityRef/FullName") or payment.vendor).strip()
-    txn_date_raw = payment_ret.findtext("TxnDate")
-
-    try:
-        txn_date = _parse_qb_date(txn_date_raw) if txn_date_raw else payment.date
-    except ValueError:
-        txn_date = payment.date
-
-    amount_str = payment_ret.findtext("Amount") or str(payment.amount_to_pay)
-    try:
-        amount = float(Decimal(amount_str.strip()))
-    except Exception:
-        amount = payment.amount_to_pay
-
-    return BillPayment(
-        id=memo,
-        date=txn_date,
-        amount_to_pay=amount,
-        vendor=vendor,
-    )
 
 
 def _escape_xml(value: str) -> str:

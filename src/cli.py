@@ -15,12 +15,7 @@ from pathlib import Path
 from .excel_reader import extract_account_debit_vendor
 from .compare import compare_records
 from .reporting import save_json_report
-
-# Optional import for QuickBooks COM connection
-try:
-    from .qb_gateway import fetch_bill_payments  # type: ignore
-except ImportError:
-    fetch_bill_payments = None  # type: ignore
+from .qb_gateway import fetch_bill_payments
 
 
 def _to_record_list(items: List[Any]) -> List[Dict[str, Any]]:
