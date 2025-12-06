@@ -5,7 +5,8 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from typing import Iterator, List
-from datetime import date
+from datetime import datetime
+from decimal import Decimal
 
 try:
     import win32com.client  # type: ignore
@@ -42,14 +43,14 @@ def _qb_session() -> Iterator[tuple[object, object]]:
 #     return str(h).strip() if h is not None else ""
 
 
-def _parse_qb_date(value: str | None) -> date:
-    """Parse QB date or datetime to Python date. Expects 'YYYY-MM-DD' or startswith it."""
+def _parse_qb_date(value: str | None) -> datetime:
+    """Parse QB date or datetime to Python datetime. Expects 'YYYY-MM-DD' or starts with it."""
     if not value:
         raise ValueError("Missing QuickBooks date")
     s = value.strip()
     # QBXML Date is 'YYYY-MM-DD'; DateTime starts with that. Use first 10 chars safely.
     try:
-        return date.fromisoformat(s[:10])
+        return datetime.fromisoformat(s[:10])  # Change to datetime
     except ValueError as e:
         raise ValueError(f"Invalid QuickBooks date: {s}") from e
 
@@ -186,7 +187,7 @@ def add_bill_payments_batch(
             f"        <PayeeEntityRef>\n"
             f"          <FullName>{_escape_xml(payment.vendor)}</FullName>\n"
             f"        </PayeeEntityRef>\n"
-            f"        <TxnDate>{payment.date.isoformat()}</TxnDate>\n"
+            f"        <TxnDate>{payment.date.strftime('%Y-%m-%d')}</TxnDate>\n"
             f"        <BankAccountRef>\n"
             f"          <FullName>Chase</FullName>\n"
             f"        </BankAccountRef>\n"
@@ -226,9 +227,14 @@ def add_bill_payments_batch(
 
         txn_date_raw = payment_ret.findtext("TxnDate")
         try:
-            txn_date = _parse_qb_date(txn_date_raw) if txn_date_raw else date.today()
+            txn_date = (
+                datetime.fromisoformat(txn_date_raw.strip()[:19])
+                if txn_date_raw
+                else datetime.now()
+            )
         except ValueError:
-            txn_date = date.today()
+            # txn_date = date.today()
+            continue  # skip if date is missing/invalid
 
         amount_str = payment_ret.findtext("Amount") or "0"
         try:
@@ -271,8 +277,6 @@ def fetch_unpaid_bills_for_vendor(vendor_name: str) -> List[tuple[str, float]]:
         root = _send_qbxml(qbxml)
     except RuntimeError:
         return []
-
-    from decimal import Decimal
 
     bills = []
     for bill_ret in root.findall(".//BillRet"):

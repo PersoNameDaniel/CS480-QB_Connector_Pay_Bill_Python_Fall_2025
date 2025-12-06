@@ -11,11 +11,13 @@ import sys
 from typing import Any, List, Dict
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
+from datetime import datetime
 
-from .excel_reader import extract_account_debit_vendor
+from .excel_reader import extract_account_debit_vendor, extract_account_debit_nonvendor
 from .compare import compare_records
 from .reporting import save_json_report
-from .qb_gateway import fetch_bill_payments
+from .qb_gateway import fetch_bill_payments, add_bill_payments_batch
+from .models import BillPayment
 
 
 def _to_record_list(items: List[Any]) -> List[Dict[str, Any]]:
@@ -47,7 +49,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--sheet",
-        default="account debit vendor",
+        default="vendor",
         help="Name of the Excel sheet to read.",
     )
     parser.add_argument(
@@ -71,7 +73,10 @@ def main() -> int:
 
     print("Reading Excel workbook...")
     try:
-        excel_data = extract_account_debit_vendor(args.workbook)
+        if args.sheet == "vendor":
+            excel_data = extract_account_debit_vendor(args.workbook)
+        elif args.sheet == "nonvendor":
+            excel_data = extract_account_debit_nonvendor(args.workbook)
         print(f"Loaded {len(excel_data)} rows from Excel.")
     except Exception as e:
         print(f"Error reading Excel: {e}")
@@ -106,6 +111,34 @@ def main() -> int:
     except Exception as e:
         print(f"Failed to save report: {e}")
         return 1
+
+    # Add missing records to QuickBooks
+    if result["missing_in_qb"]:
+        print("Adding missing records to QuickBooks...")
+        try:
+            # Convert missing records back to BillPayment objects
+            missing_payments = [
+                BillPayment(
+                    source="quickbooks",
+                    id=item["id"],  # Adjust based on your actual data structure
+                    # Handle date conversion
+                    date=(
+                        datetime.strptime(item["date"], "%Y-%m-%dT%H:%M:%S")
+                        if isinstance(item.get("date"), str)
+                        else item["date"]  # Ensure it's a datetime object
+                    ),
+                    amount_to_pay=item["amount_to_pay"],
+                    vendor=item["vendor"],  # Ensure this field exists in your data
+                )
+                for item in result["missing_in_qb"]
+            ]
+            added_payments = add_bill_payments_batch(
+                args.company_file, missing_payments
+            )
+            print(f"Added {len(added_payments)} payments to QuickBooks.")
+        except Exception as e:
+            print(f"Failed to add payments to QuickBooks: {e}")
+            return 1
 
     print("\nComparison complete.")
     print("Summary:")
