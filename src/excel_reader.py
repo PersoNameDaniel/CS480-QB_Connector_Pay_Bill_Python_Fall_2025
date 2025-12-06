@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional
+from datetime import date as DateType, datetime
 
-from openpyxl import load_workbook
+from openpyxl import load_workbook  # type: ignore[import-untyped]
 
-from models import BillPayment
+from .models import BillPayment
 
 
 def _default_company_workbook() -> Path:
@@ -50,6 +51,20 @@ def _read_account_debit_sheet(
 
         payments: List[BillPayment] = []
         for row in rows:
+            # -------------------------------------
+            # Read the Comments column
+            # -------------------------------------
+            comments = _get(row, "Comments", "Comment", "comments", "comment")
+            comments_str = str(comments).strip().lower() if comments else ""
+
+            # -------------------------------------
+            # SKIP SHIPPING CHARGES rows
+            # -------------------------------------
+            if comments_str == "shipping charges":
+                print(f"Skipping row with Shipping Charges: {row}")
+                continue
+
+            # -------------------------------------
             # Parent ID - Child ID -> take only parent (left of " - ")
             parent_child = _get(
                 row, "Parent ID - Child ID", "Parent ID", "ParentID", "Parent"
@@ -68,6 +83,8 @@ def _read_account_debit_sheet(
 
             bank_date = _get(row, "Bank Date")
             check_amount = _get(row, "Check Amount")
+            vendor_raw = _get(row, "Supplier", "Supplier Name", "Vendor", "Vendor Name")
+            vendor = str(vendor_raw).strip() if vendor_raw not in (None, "") else None
 
             # Require amount to create a payment
             if check_amount in (None, ""):
@@ -79,16 +96,52 @@ def _read_account_debit_sheet(
             except (ValueError, TypeError):
                 continue
 
-            date = _normalize(bank_date)
+            # -------------------------------------
+            # Convert Bank Date to datetime.date
+            # -------------------------------------
+            parsed_date: Optional[DateType]
+
+            if isinstance(bank_date, datetime):
+                parsed_date = bank_date.date()
+            elif isinstance(bank_date, DateType):
+                parsed_date = bank_date
+            elif isinstance(bank_date, str):
+                s = bank_date.strip()
+                parsed_date = None
+
+                # Try ISO-like first 10 chars (handles "YYYY-MM-DD HH:MM:SS")
+                try:
+                    parsed_date = DateType.fromisoformat(s[:10])
+                except ValueError:
+                    parsed_date = None
+
+                if parsed_date is None:
+                    for fmt in (
+                        "%Y-%m-%d",
+                        "%Y-%m-%d %H:%M:%S",
+                        "%m/%d/%Y",
+                        "%m/%d/%y",
+                    ):
+                        try:
+                            parsed_date = datetime.strptime(s, fmt).date()
+                            break
+                        except ValueError:
+                            continue
+            else:
+                parsed_date = None
+
+            if parsed_date is None:
+                print(f"Skipping row with invalid or missing Bank Date: {bank_date!r}")
+                continue
 
             payments.append(
                 BillPayment(
                     id=parent_str,
-                    date=date,
+                    date=parsed_date,  # <- guaranteed datetime.date
                     amount_to_pay=amount_value,
+                    vendor=vendor,
                 )
             )
-
         return payments
     finally:
         wb.close()
@@ -122,8 +175,8 @@ if __name__ == "__main__":  # pragma: no cover - manual invocation
         for p in vendor_rows[:10]:
             print(p)
 
-        print(f"\nNon-vendor rows: {len(nonnvendor_rows := nonvendor_rows)}")
-        for p in nonnvendor_rows[:10]:
+        print(f"\nNon-vendor rows: {len(nonvendor_rows)}")
+        for p in nonvendor_rows[:10]:
             print(p)
     except Exception as e:
         print(f"Error: {e}")

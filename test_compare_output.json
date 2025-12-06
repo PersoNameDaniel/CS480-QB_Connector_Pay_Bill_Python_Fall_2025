@@ -1,0 +1,26 @@
+{
+  "status": "success",
+  "generated_at": "2025-12-05T01:47:51.668502+00:00",
+  "added_records": [
+    {
+      "record_id": "200",
+      "amount": 500.0,
+      "date": "2024-02-02",
+      "vendor": "B"
+    }
+  ],
+  "conflicts": [
+    {
+      "record_id": "300",
+      "reason": "payment_only_in_quickbooks",
+      "excel_amount": null,
+      "qb_amount": 900.0,
+      "excel_date": null,
+      "qb_date": "2024-03-03",
+      "excel_vendor": null,
+      "qb_vendor": "C"
+    }
+  ],
+  "same_records": 0,
+  "error": null
+}

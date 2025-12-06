@@ -1,76 +1,83 @@
-# This Module contains tests for the compare_records function
-from __future__ import annotations
-import unittest
-from typing import List, Dict, Any
-from src.compare import compare_records
+from datetime import date
+from pathlib import Path
+
+from src.models import BillPayment
+from src.compare import compare_bill_payments
+import src.reporting as reporting
 
 
-class TestCompareRecords(unittest.TestCase):
-    def setUp(self):
-        self.excel_data: List[Dict[str, Any]] = [
-            {"id": 1, "amount": 100.0},
-            {"id": 2, "amount": 200.0},
-            {"id": 3, "amount": 300.0},
-        ]
-        self.qb_data: List[Dict[str, Any]] = [
-            {"id": 2, "amount": 200.0},
-            {"id": 3, "amount": 350.0},
-            {"id": 4, "amount": 400.0},
-        ]
-
-    def test_compare_records_basic(self):
-        expected_discrepancies = {
-            "missing_in_excel": [{"id": 4, "amount": 400.0}],
-            "missing_in_qb": [{"id": 1, "amount": 100.0}],
-            "amount_mismatches": [{"id": 3, "excel_amount": 300.0, "qb_amount": 350.0}],
-        }
-        result = compare_records(self.excel_data, self.qb_data)
-        self.assertEqual(result, expected_discrepancies)
-
-    def test_empty_datasets(self):
-        result = compare_records([], [])
-        expected = {
-            "missing_in_excel": [],
-            "missing_in_qb": [],
-            "amount_mismatches": [],
-        }
-        self.assertEqual(result, expected)
-
-    def test_identical_datasets(self):
-        identical_data = [{"id": 1, "amount": 100.0}, {"id": 2, "amount": 200.0}]
-        result = compare_records(identical_data, identical_data)
-        expected = {
-            "missing_in_excel": [],
-            "missing_in_qb": [],
-            "amount_mismatches": [],
-        }
-        self.assertEqual(result, expected)
-
-    def test_completely_different_datasets(self):
-        excel = [{"id": 1, "amount": 100.0}]
-        qb = [{"id": 2, "amount": 200.0}]
-        result = compare_records(excel, qb)
-        expected = {
-            "missing_in_excel": [{"id": 2, "amount": 200.0}],
-            "missing_in_qb": [{"id": 1, "amount": 100.0}],
-            "amount_mismatches": [],
-        }
-        self.assertEqual(result, expected)
-
-    def test_multiple_amount_mismatches(self):
-        excel = [{"id": 1, "amount": 100.0}, {"id": 2, "amount": 200.0}]
-        qb = [{"id": 1, "amount": 150.0}, {"id": 2, "amount": 250.0}]
-        result = compare_records(excel, qb)
-        expected = {
-            "missing_in_excel": [],
-            "missing_in_qb": [],
-            "amount_mismatches": [
-                {"id": 1, "excel_amount": 100.0, "qb_amount": 150.0},
-                {"id": 2, "excel_amount": 200.0, "qb_amount": 250.0},
-            ],
-        }
-        self.assertEqual(result, expected)
+def _payment_to_dict(p: BillPayment) -> dict:
+    return {
+        "record_id": p.id,
+        "amount": float(p.amount_to_pay),
+        "date": p.date.isoformat(),
+        "vendor": p.vendor,
+    }
 
 
-if __name__ == "__main__":
-    unittest.main()
+def _conflict_to_dict(c) -> dict:
+    return {
+        "record_id": c.record_id,
+        "reason": c.reason,
+        "excel_amount": c.excel_amount,
+        "qb_amount": c.qb_amount,
+        "excel_date": c.excel_date,
+        "qb_date": c.qb_date,
+        "excel_vendor": c.excel_vendor,
+        "qb_vendor": c.qb_vendor,
+    }
+
+
+def test_compare_and_report(tmp_path: Path) -> None:
+    # Fake Excel + QB data just to test compare logic
+    excel = [
+        BillPayment(id="100", date=date(2024, 1, 1), amount_to_pay=200.0, vendor="A"),
+        BillPayment(id="200", date=date(2024, 2, 2), amount_to_pay=500.0, vendor="B"),
+    ]
+
+    qb = [
+        BillPayment(
+            id="100", date=date(2024, 1, 1), amount_to_pay=200.0, vendor="A"
+        ),  # same
+        BillPayment(
+            id="300", date=date(2024, 3, 3), amount_to_pay=900.0, vendor="C"
+        ),  # QB-only
+    ]
+
+    result = compare_bill_payments(excel, qb)
+
+    # Basic sanity-checks on comparison logic
+    assert [p.id for p in result.excel_only] == ["200"]
+    assert [p.id for p in result.qb_only] == ["300"]
+    assert [c.record_id for c in result.conflicts] == []
+
+    payload = {
+        "status": "success",
+        "generated_at": reporting.iso_timestamp(),
+        "added_records": [_payment_to_dict(p) for p in result.excel_only],
+        "conflicts": (
+            [_conflict_to_dict(c) for c in result.conflicts]
+            + [
+                {
+                    "record_id": p.id,
+                    "reason": "payment_only_in_quickbooks",
+                    "excel_amount": None,
+                    "qb_amount": float(p.amount_to_pay),
+                    "excel_date": None,
+                    "qb_date": p.date.isoformat(),
+                    "excel_vendor": None,
+                    "qb_vendor": p.vendor,
+                }
+                for p in result.qb_only
+            ]
+        ),
+        "same_records": 0,
+        "error": None,
+    }
+
+    out_path = tmp_path / "test_compare_output.json"
+    reporting.write_report(payload, out_path)
+
+    # Check that report file was actually written
+    assert out_path.exists()
+    assert out_path.stat().st_size > 0

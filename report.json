@@ -1,10 +1,117 @@
 {
-    "missing_in_excel": [
+    "status": "success",
+    "generated_at": "2025-12-03T20:18:57.790299+00:00",
+    "added_records": [
         {
-            "id": "Bill Payment",
-            "amount": 4000.0
+            "record_id": "44092",
+            "amount": 400.0,
+            "date": "2024-01-09",
+            "vendor": "ATT(cell phone)"
+        },
+        {
+            "record_id": "44094",
+            "amount": 250.0,
+            "date": "2024-01-09",
+            "vendor": "ATT(cell phone)"
+        },
+        {
+            "record_id": "44664",
+            "amount": 2240.0,
+            "date": "2024-01-03",
+            "vendor": "ATT(cell phone)"
+        },
+        {
+            "record_id": "44733",
+            "amount": 3576.19,
+            "date": "2024-03-12",
+            "vendor": "ATT(cell phone)"
+        },
+        {
+            "record_id": "44783",
+            "amount": 14000.0,
+            "date": "2024-03-22",
+            "vendor": "ATT(cell phone)"
+        },
+        {
+            "record_id": "45017",
+            "amount": 6000.0,
+            "date": "2024-04-08",
+            "vendor": "ATT(cell phone)"
         }
     ],
-    "missing_in_qb": [],
-    "amount_mismatches": []
+    "conflicts": [
+        {
+            "record_id": "44091",
+            "reason": "data_conflict",
+            "excel_amount": 400.0,
+            "qb_amount": 1.0,
+            "excel_date": "2024-01-09",
+            "qb_date": "2024-01-09",
+            "excel_vendor": "ATT(cell phone)",
+            "qb_vendor": ""
+        },
+        {
+            "record_id": "44092",
+            "reason": "missing_in_quickbooks",
+            "excel_amount": 400.0,
+            "qb_amount": null,
+            "excel_date": "2024-01-09",
+            "qb_date": null,
+            "excel_vendor": "ATT(cell phone)",
+            "qb_vendor": null
+        },
+        {
+            "record_id": "44094",
+            "reason": "missing_in_quickbooks",
+            "excel_amount": 250.0,
+            "qb_amount": null,
+            "excel_date": "2024-01-09",
+            "qb_date": null,
+            "excel_vendor": "ATT(cell phone)",
+            "qb_vendor": null
+        },
+        {
+            "record_id": "44664",
+            "reason": "missing_in_quickbooks",
+            "excel_amount": 2240.0,
+            "qb_amount": null,
+            "excel_date": "2024-01-03",
+            "qb_date": null,
+            "excel_vendor": "ATT(cell phone)",
+            "qb_vendor": null
+        },
+        {
+            "record_id": "44733",
+            "reason": "missing_in_quickbooks",
+            "excel_amount": 3576.19,
+            "qb_amount": null,
+            "excel_date": "2024-03-12",
+            "qb_date": null,
+            "excel_vendor": "ATT(cell phone)",
+            "qb_vendor": null
+        },
+        {
+            "record_id": "44783",
+            "reason": "missing_in_quickbooks",
+            "excel_amount": 14000.0,
+            "qb_amount": null,
+            "excel_date": "2024-03-22",
+            "qb_date": null,
+            "excel_vendor": "ATT(cell phone)",
+            "qb_vendor": null
+        },
+        {
+            "record_id": "45017",
+            "reason": "missing_in_quickbooks",
+            "excel_amount": 6000.0,
+            "qb_amount": null,
+            "excel_date": "2024-04-08",
+            "qb_date": null,
+            "excel_vendor": "ATT(cell phone)",
+            "qb_vendor": null
+        }
+    ],
+    "same_records": 0,
+    "matching_records": [],
+    "error": null
 }

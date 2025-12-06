@@ -5,4 +5,6 @@ build/
 poetry.lock
 .~lock.company_data.xlsx#
 report.json
+report_after_push.json
+test_compare_output.json
 *.log

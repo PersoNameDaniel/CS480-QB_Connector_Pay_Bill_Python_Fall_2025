@@ -1,5 +1,5 @@
-from qb_gateway import add_bill_payment, add_bill_payments_batch
-from models import BillPayment
+from src.qb_gateway import add_bill_payment, add_bill_payments_batch
+from src.models import BillPayment
 from datetime import date
 
 

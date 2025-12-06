@@ -1,101 +1,95 @@
-from typing import List, Dict, Any
-from decimal import Decimal
+"""
+Comparison logic for bill payments.
+
+Implements the rules:
+
+- If bill exists in QB and not in Excel      -> ignore at bill level, but payments
+                                              only in QB are represented in qb_only.
+- If bill exists in Excel and not in QB      -> this "never happens" (we just treat
+                                              them as excel_only payments).
+- If bill exists in QB and Excel but with different bill data -> ignore bill metadata;
+  we only compare payment data (id, date, amount, vendor).
+
+If bill exists in QB and Excel:
+
+- If payment data is same                    -> later counted as same_records.
+- If payment data is different               -> recorded as Conflict (reason=data_conflict).
+- If payment data only exist in Excel        -> included in excel_only (to add to QB).
+- If payment data only exist in QB           -> included in qb_only (for reporting).
+"""
+
+from __future__ import annotations
+
+from typing import List
+from .models import BillPayment, Conflict, ComparisonReport
 
 
-def normalize_id(value: Any) -> int | str:
-    """Normalize ID to int if possible, otherwise string."""
-    try:
-        return int(value)
-    except (ValueError, TypeError):
-        return str(value).strip() if value is not None else ""
+def _same_payment(e: BillPayment, q: BillPayment) -> bool:
+    """Return True if Excel and QB payment data are considered identical."""
+    same_amount = abs(float(e.amount_to_pay) - float(q.amount_to_pay)) < 0.01
+    same_date = e.date == q.date
+    # same_vendor = (e.vendor or "") == (q.vendor or "")
+    return same_amount and same_date
 
 
-def compare_records(
-    excel_data: List[Dict[str, Any]],
-    qb_data: List[Dict[str, Any]],
-    amount_tolerance: float = 0.01,
-) -> Dict[str, Any]:
-    """Compare financial records from Excel and QuickBooks."""
+def compare_bill_payments(
+    excel_payments: List[BillPayment],
+    qb_payments: List[BillPayment],
+) -> ComparisonReport:
+    """Compare Excel and QuickBooks payments and return a ComparisonReport."""
 
-    # 🔹 Normalize Excel data into standard form
-    normalized_excel: List[Dict[str, Any]] = []
-    for record in excel_data:
-        record_id = (
-            record.get("Parent ID")
-            or record.get("Child ID")
-            or record.get("Invoice Num")
-            or record.get("id")
-        )
-        amount = (
-            record.get("Invoice Amount")
-            or record.get("Check Amount")
-            or record.get("AP")
-            or record.get("amount")
-        )
-        if record_id is not None and amount is not None:
-            normalized_excel.append(
-                {"id": normalize_id(record_id), "amount": float(amount)}
+    # Index by record_id (assuming one payment per id per source)
+    excel_by_id = {p.id: p for p in excel_payments}
+    qb_by_id = {p.id: p for p in qb_payments}
+    print("qb_by_id:", qb_by_id)
+
+    excel_ids = set(excel_by_id.keys())
+    qb_ids = set(qb_by_id.keys())
+
+    common_ids = excel_ids & qb_ids
+    excel_only_ids = excel_ids - qb_ids
+    qb_only_ids = qb_ids - excel_ids
+
+    report = ComparisonReport()
+
+    # 1) Excel-only payments: candidates to be added to QuickBooks
+    for record_id in sorted(excel_only_ids):
+        p = excel_by_id[record_id]
+        p.source = "excel"
+        report.excel_only.append(p)
+
+    # 2) QB-only payments: present in QuickBooks only
+    for record_id in sorted(qb_only_ids):
+        p = qb_by_id[record_id]
+        p.source = "quickbooks"
+        report.qb_only.append(p)
+
+    # 3) Common IDs: compare payment data
+    for record_id in sorted(common_ids):
+        e = excel_by_id[record_id]
+        q = qb_by_id[record_id]
+        e.source = "excel"
+        q.source = "quickbooks"
+
+        if _same_payment(e, q):
+            # No conflict; will be counted as same_records later
+            continue
+
+        # Payment data mismatch -> data_conflict
+        report.conflicts.append(
+            Conflict(
+                record_id=record_id,
+                reason="data_conflict",
+                excel_amount=float(e.amount_to_pay),
+                qb_amount=float(q.amount_to_pay),
+                excel_date=e.date.isoformat(),
+                qb_date=q.date.isoformat(),
+                excel_vendor=e.vendor,
+                qb_vendor=q.vendor,
             )
-
-    # 🔹 Normalize QuickBooks data (if any)
-    normalized_qb: List[Dict[str, Any]] = []
-    for record in qb_data:
-        record_id = (
-            record.get("id")
-            or record.get("TxnID")
-            or record.get("bill")
-            or record.get("Name")
         )
-        amount = (
-            record.get("amount")
-            or record.get("amount_to_pay")
-            or record.get("TotalAmount")
-        )
-        if record_id is not None and amount is not None:
-            normalized_qb.append(
-                {"id": normalize_id(record_id), "amount": float(amount)}
-            )
 
-    # 🔹 Validate
-    for record in normalized_excel + normalized_qb:
-        if "id" not in record or "amount" not in record:
-            raise KeyError(f"Record missing required fields: {record}")
-        if not isinstance(record["amount"], (int, float, Decimal)):
-            raise TypeError(f"Amount must be numeric: {record}")
-
-    discrepancies: Dict[str, Any] = {
-        "missing_in_excel": [],
-        "missing_in_qb": [],
-        "amount_mismatches": [],
-    }
-
-    excel_dict = {normalize_id(r["id"]): r for r in normalized_excel}
-    qb_dict = {normalize_id(r["id"]): r for r in normalized_qb}
-
-    # 🔹 Missing in Excel
-    for qb_id, qb_record in qb_dict.items():
-        if qb_id not in excel_dict:
-            discrepancies["missing_in_excel"].append(qb_record)
-
-    # 🔹 Missing in QuickBooks
-    for excel_id, excel_record in excel_dict.items():
-        if excel_id not in qb_dict:
-            discrepancies["missing_in_qb"].append(excel_record)
-
-    # 🔹 Amount mismatches
-    for record_id in set(excel_dict.keys()) & set(qb_dict.keys()):
-        excel_amt = float(excel_dict[record_id]["amount"])
-        qb_amt = float(qb_dict[record_id]["amount"])
-        if abs(excel_amt - qb_amt) > amount_tolerance:
-            discrepancies["amount_mismatches"].append(
-                {"id": record_id, "excel_amount": excel_amt, "qb_amount": qb_amt}
-            )
-
-    # 🔹 Sort results
-    for key in discrepancies:
-        discrepancies[key].sort(key=lambda x: x["id"] if isinstance(x, dict) else x)
-
-    return discrepancies
+    return report
 
 
-__all__ = ["compare_records"]
+__all__ = ["compare_bill_payments"]

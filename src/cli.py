@@ -1,124 +1,59 @@
 """
-Command-line interface (CLI) for the QuickBooks Pay Bill Connector.
+Command-line interface for the Pay Bills synchroniser.
 
-This script allows you to compare financial data between an Excel workbook
-and QuickBooks, then generate a JSON discrepancy report.
+This module provides the entry point for running the tool from the command
+line. It parses arguments, invokes the high-level runner, and prints where the
+JSON report was written.
 """
 
 from __future__ import annotations
+
 import argparse
 import sys
-from typing import Any, List, Dict
-from dataclasses import asdict, is_dataclass
-from pathlib import Path
 
-from .excel_reader import extract_account_debit_vendor
-from .compare import compare_records
-from .reporting import save_json_report
-
-# Optional import for QuickBooks COM connection
-try:
-    from .qb_gateway import fetch_bill_payments  # type: ignore
-except ImportError:
-    fetch_bill_payments = None  # type: ignore
+from .runner import run_pay_bills  # Orchestrator for Pay Bills workflow
 
 
-def _to_record_list(items: List[Any]) -> List[Dict[str, Any]]:
-    """Convert a list of dataclass instances or dicts into list[dict]."""
-    out: List[Dict[str, Any]] = []
-    for item in items:
-        if isinstance(item, dict):
-            out.append(item)
-        # ensure item is a dataclass instance (not the dataclass type)
-        elif is_dataclass(item) and not isinstance(item, type):
-            out.append(asdict(item))
-        elif hasattr(item, "__dict__"):
-            out.append(dict(item.__dict__))  # best-effort fallback
-        else:
-            out.append({"value": item})
-    return out
-
-
-def main() -> int:
-    """Main CLI entry point."""
+def main(argv: list[str] | None = None) -> int:
+    # Create a user-friendly argument parser
     parser = argparse.ArgumentParser(
-        description="Compare Excel Pay Bills against QuickBooks data."
+        description="Synchronise bill payments between Excel and QuickBooks"
     )
 
+    # Required: Excel file path
     parser.add_argument(
         "--workbook",
         required=True,
-        help="Path to the Excel workbook (e.g., company_data.xlsx).",
+        help="Path to the Excel workbook (company_data.xlsx)",
     )
+
+    # Required: sheet type (vendor or nonvendor)
     parser.add_argument(
         "--sheet",
-        default="account debit vendor",
-        help="Name of the Excel sheet to read.",
+        required=True,
+        choices=["vendor", "nonvendor"],
+        help="Specify which account debit sheet to process: vendor or nonvendor",
     )
+
+    # Optional: output JSON report
     parser.add_argument(
         "--output",
-        default="report.json",
-        help="Path to save the generated discrepancy report (JSON format).",
-    )
-    parser.add_argument(
-        "--skip-qb",
-        action="store_true",
-        help="Skip QuickBooks data fetching (for offline testing).",
-    )
-    parser.add_argument(
-        "--company-file",
-        type=str,
-        default=None,
-        help="Optional QuickBooks company file path.",
+        help="Optional path for the generated JSON report (default: pay_bills_report.json)",
     )
 
-    args = parser.parse_args()
+    # Parse arguments (from argv or sys.argv)
+    args = parser.parse_args(argv)
 
-    print("Reading Excel workbook...")
-    try:
-        excel_data = extract_account_debit_vendor(args.workbook)
-        print(f"Loaded {len(excel_data)} rows from Excel.")
-    except Exception as e:
-        print(f"Error reading Excel: {e}")
-        return 1
+    # Run the synchronisation using the currently open QuickBooks company file ("")
+    path = run_pay_bills(
+        "",  # Use currently-open company file
+        args.workbook,
+        sheet_type=args.sheet,
+        output_path=args.output,
+    )
 
-    # convert dataclass instances to plain dicts for compare_records
-    excel_records: List[Dict[str, Any]] = _to_record_list(excel_data)
-
-    qb_data: List[Dict[str, Any]] = []
-    if args.skip_qb or fetch_bill_payments is None:
-        print("Skipping QuickBooks fetch (using empty dataset).")
-    else:
-        try:
-            print("Connecting to QuickBooks...")
-            qb_payments = fetch_bill_payments(args.company_file)
-            qb_data = _to_record_list(qb_payments)
-            print(f"Retrieved {len(qb_data)} QuickBooks payments.")
-        except Exception as e:
-            print(f"Error fetching QuickBooks data: {e}")
-            return 1
-
-    print("Comparing Excel vs QuickBooks records...")
-    try:
-        result = compare_records(excel_records, qb_data)
-    except Exception as e:
-        print(f"Comparison failed: {e}")
-        return 1
-
-    try:
-        save_json_report(result, Path(args.output))
-        print(f"Report saved successfully to {args.output}")
-    except Exception as e:
-        print(f"Failed to save report: {e}")
-        return 1
-
-    print("\nComparison complete.")
-    print("Summary:")
-    print(f"  Missing in Excel: {len(result['missing_in_excel'])}")
-    print(f"  Missing in QuickBooks: {len(result['missing_in_qb'])}")
-    print(f"  Amount mismatches: {len(result['amount_mismatches'])}")
-
-    return 0
+    print(f"Report written to {path}")
+    return 0  # success exit code
 
 
 if __name__ == "__main__":
