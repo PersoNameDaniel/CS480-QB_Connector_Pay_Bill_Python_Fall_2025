@@ -10,6 +10,7 @@ from datetime import date
 class BillPayment:
     """Represents a bill payment."""
 
+    source: str
     id: str
     date: date
     amount_to_pay: float

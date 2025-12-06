@@ -107,6 +107,7 @@ def _read_account_debit_sheet(
 
             payments.append(
                 BillPayment(
+                    source="excel",
                     id=parent_str,
                     date=date,
                     amount_to_pay=amount_value,

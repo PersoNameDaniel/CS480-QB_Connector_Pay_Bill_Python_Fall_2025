@@ -133,6 +133,7 @@ def fetch_bill_payments(company_file: str | None = None) -> List[BillPayment]:
         # Build the BillPayment model as defined in models.py
         payments.append(
             BillPayment(
+                source="quickbooks",
                 id=memo,
                 date=txn_date,
                 amount_to_pay=amount_to_pay_value,
