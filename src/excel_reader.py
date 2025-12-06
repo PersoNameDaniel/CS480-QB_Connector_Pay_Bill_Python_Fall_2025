@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 from datetime import date as DateType, datetime
 
 from openpyxl import load_workbook  # type: ignore[import-untyped]
@@ -20,9 +20,103 @@ def _normalize(h: object) -> str:
     return str(h).strip() if h is not None else ""
 
 
+def _load_vendor_mapping(workbook_path: Path) -> Dict[str, str]:
+    """
+    Load vendor mapping from the 'vendors' sheet.
+
+    Expected Excel structure (sheet name: 'vendors'):
+        Name                  | ID
+        --------------------------------
+        ATT(cell phone)      | 1
+        Caps 'N Plugs        | 2
+        Chase/GM Credit (BP) | 3
+        Citi Card - COSTCO   | 4
+
+    We convert numeric ID -> code letter used in account-debit sheet:
+        1 -> "A"
+        2 -> "B"
+        3 -> "C"
+        4 -> "D"
+        ...
+
+    Returns:
+        dict[str, str]: code -> QuickBooks vendor FullName
+                        e.g. {"A": "ATT(cell phone)", "B": "Caps 'N Plugs", ...}
+    """
+    workbook_path = Path(workbook_path)
+    if not workbook_path.exists():
+        raise FileNotFoundError(f"Workbook not found: {workbook_path}")
+
+    wb = load_workbook(filename=workbook_path, read_only=True, data_only=True)
+    try:
+        if "vendors" not in wb.sheetnames:
+            print("Warning: No 'vendors' sheet found; using vendor codes as-is.")
+            return {}
+
+        ws = wb["vendors"]
+        rows = ws.iter_rows(values_only=True)
+        header_row = next(rows, None)
+        if header_row is None:
+            return {}
+
+        headers = [_normalize(h).lower() for h in header_row]
+        index = {h: i for i, h in enumerate(headers)}
+
+        name_idx = index.get("name")
+        id_idx = index.get("id")
+
+        if name_idx is None or id_idx is None:
+            print("Warning: Vendors sheet missing 'Name' or 'ID' column.")
+            return {}
+
+        mapping: Dict[str, str] = {}
+
+        import string
+
+        letters = string.ascii_uppercase  # "A", "B", "C", ...
+
+        for row in rows:
+            if name_idx >= len(row) or id_idx >= len(row):
+                continue
+
+            name_cell = row[name_idx]
+            id_cell = row[id_idx]
+
+            if not name_cell or id_cell in (None, ""):
+                continue
+
+            vendor_name = str(name_cell).strip()
+            if not vendor_name:
+                continue
+
+            try:
+                vendor_id = int(id_cell)
+            except (TypeError, ValueError):
+                continue
+
+            if 1 <= vendor_id <= len(letters):
+                code = letters[vendor_id - 1]  # 1 -> "A", 2 -> "B", ...
+            else:
+                continue
+
+            mapping[code] = vendor_name
+
+        return mapping
+    finally:
+        wb.close()
+
+
 def _read_account_debit_sheet(
-    workbook_path: Path, sheet_name: str
+    workbook_path: Path,
+    sheet_name: str,
+    vendor_map: Dict[str, str] | None = None,
 ) -> List[BillPayment]:
+    """
+    Generic reader for 'account debit vendor' and 'account debit nonvendor' sheets.
+
+    If vendor_map is provided, it is used to translate vendor codes (e.g. "A", "B")
+    into full QuickBooks vendor names.
+    """
     workbook_path = Path(workbook_path)
     if not workbook_path.exists():
         raise FileNotFoundError(f"Workbook not found: {workbook_path}")
@@ -66,6 +160,7 @@ def _read_account_debit_sheet(
 
             # -------------------------------------
             # Parent ID - Child ID -> take only parent (left of " - ")
+            # -------------------------------------
             parent_child = _get(
                 row, "Parent ID - Child ID", "Parent ID", "ParentID", "Parent"
             )
@@ -83,8 +178,17 @@ def _read_account_debit_sheet(
 
             bank_date = _get(row, "Bank Date")
             check_amount = _get(row, "Check Amount")
+
+            # Vendor column in account-debit sheet holds a CODE (e.g. "A", "B", "C", "D")
             vendor_raw = _get(row, "Supplier", "Supplier Name", "Vendor", "Vendor Name")
-            vendor = str(vendor_raw).strip() if vendor_raw not in (None, "") else None
+            vendor: Optional[str] = None
+            if vendor_raw not in (None, ""):
+                code = str(vendor_raw).strip()
+                if vendor_map:
+                    # Map "A"/"B"/... -> full QB vendor name if possible
+                    vendor = vendor_map.get(code, code)
+                else:
+                    vendor = code
 
             # Require amount to create a payment
             if check_amount in (None, ""):
@@ -137,7 +241,7 @@ def _read_account_debit_sheet(
             payments.append(
                 BillPayment(
                     id=parent_str,
-                    date=parsed_date,  # <- guaranteed datetime.date
+                    date=parsed_date,  # guaranteed datetime.date
                     amount_to_pay=amount_value,
                     vendor=vendor,
                 )
@@ -148,13 +252,17 @@ def _read_account_debit_sheet(
 
 
 def extract_account_debit_vendor(workbook_path: Path) -> List[BillPayment]:
-    """Read 'account debit vendor' and return BillPayment list using parent id and default bank."""
-    return _read_account_debit_sheet(workbook_path, "account debit vendor")
+    """
+    Read 'account debit vendor' and return BillPayment list using parent id
+    and the full QuickBooks vendor names (mapped via the 'vendors' sheet).
+    """
+    vendor_map = _load_vendor_mapping(workbook_path)
+    return _read_account_debit_sheet(workbook_path, "account debit vendor", vendor_map)
 
 
 def extract_account_debit_nonvendor(workbook_path: Path) -> List[BillPayment]:
     """Read 'account debit nonvendor' and return BillPayment list using parent id and default bank."""
-    return _read_account_debit_sheet(workbook_path, "account debit nonvendor")
+    return _read_account_debit_sheet(workbook_path, "account debit nonvendor", None)
 
 
 __all__ = [
