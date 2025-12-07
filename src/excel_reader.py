@@ -12,11 +12,6 @@ from .models import BillPayment
 from datetime import datetime, date as _date, timedelta
 
 
-def _default_company_workbook() -> Path:
-    # company_data.xlsx expected in project root (one level above src/)
-    return Path(__file__).resolve().parents[1] / "company_data.xlsx"
-
-
 def _normalize(h: object) -> str:
     return str(h).strip() if h is not None else ""
 
@@ -24,6 +19,7 @@ def _normalize(h: object) -> str:
 def _read_account_debit_sheet(
     workbook_path: Path, sheet_name: str
 ) -> List[BillPayment]:
+    print(f"debug: {workbook_path}, sheet: {sheet_name}")  # DEBUG DELETE ME
     workbook_path = Path(workbook_path)
     if not workbook_path.exists():
         raise FileNotFoundError(f"Workbook not found: {workbook_path}")
@@ -38,6 +34,7 @@ def _read_account_debit_sheet(
         rows = ws.iter_rows(values_only=True)
         header_row = next(rows, None)
         if header_row is None:
+            print("no header row found")
             return []
 
         headers = [_normalize(h) for h in header_row]
@@ -53,25 +50,24 @@ def _read_account_debit_sheet(
         payments: List[BillPayment] = []
         for row in rows:
             # Parent ID - Child ID -> take only parent (left of " - ")
-            parent_child = _get(
-                row, "Parent ID - Child ID", "Parent ID", "ParentID", "Parent"
-            )
-            if parent_child in (None, ""):
-                # try alternative columns that may contain parent id
-                parent_child = _get(row, "Parent ID", "Parent")
+            parent_id = _get(row, "Parent ID")
+            child_id = _get(row, "Child ID")
 
             parent_str = ""
-            if parent_child not in (None, ""):
-                parent_text = str(parent_child).strip()
-                if " - " in parent_text:
-                    parent_str = parent_text.split(" - ", 1)[0].strip()
-                else:
-                    parent_str = parent_text
+            if parent_id not in (None, ""):
+                parent_str = str(parent_id).strip()
+                # Concatenate with child if child exists
+                if child_id not in (None, ""):
+                    child_str = str(child_id).strip()
+                    parent_str = f"{parent_str}-{child_str}"
 
             bank_date = _get(row, "Bank Date")
             check_amount = _get(row, "Check Amount")
-            # is_shipping = _get(row, "Comments") == "Shipping Charge"
-            if _get(row, "Comments") == "Shipping Charge":
+            if (
+                _get(row, "Comments") == "Shipping Charge"
+                or _get(row, "Comments") == "Shipping Charges"
+            ):
+                print("shipping charge skipped")
                 continue  # skip shipping charges
 
             # Require amount to create a payment
@@ -109,12 +105,25 @@ def _read_account_debit_sheet(
             if date is None:
                 continue
 
+            supplier_name = _get(row, "Supplier Name", "Supplier")
+            sname = _normalize(supplier_name).upper()
+            mapping = {
+                "A": "ATT(cell phone)",
+                "B": "Caps 'N Plugs",
+                "C": "Chase/GM Credit (BP)",
+                "D": "Citi Card - COSTCO",
+            }
+            translated_vendor = mapping.get(sname)
+            if translated_vendor is None:
+                continue
+
             payments.append(
                 BillPayment(
+                    source="excel",
                     id=parent_str,
                     date=date,
                     amount_to_pay=amount_value,
-                    # is_shipping=is_shipping,
+                    vendor=translated_vendor,
                 )
             )
 

@@ -1,101 +1,105 @@
-from typing import List, Dict, Any
+"""
+Bill Payment Comparer Module
+
+Compares payment data between Excel and QuickBooks for existing bills.
+"""
+
+from typing import Dict, List, Any
 from decimal import Decimal
 
+# from .models import BillPayment
 
-def normalize_id(value: Any) -> int | str:
-    """Normalize ID to int if possible, otherwise string."""
+
+def normalize_amount(value: Any) -> float:
+    """Convert amount to float for comparison."""
+    if value is None:
+        return 0.0
+    if isinstance(value, Decimal):
+        return float(value)
     try:
-        return int(value)
+        return float(value)
     except (ValueError, TypeError):
-        return str(value).strip() if value is not None else ""
+        return 0.0
+
+
+def get_bill_id(bill: Dict[str, Any]) -> str:
+    """
+    Extract bill ID from bill record.
+    Uses Parent-Child ID if child exists, otherwise uses Parent ID.
+    """
+    parent_id = bill.get("Parent ID", "").strip()
+    child_id = bill.get("Child ID", "").strip()
+
+    if child_id:
+        return f"{parent_id}-{child_id}"
+    return parent_id
 
 
 def compare_records(
     excel_data: List[Dict[str, Any]],
     qb_data: List[Dict[str, Any]],
-    amount_tolerance: float = 0.01,
 ) -> Dict[str, Any]:
-    """Compare financial records from Excel and QuickBooks."""
+    """
+    Compare records between Excel and QuickBooks.
 
-    # 🔹 Normalize Excel data into standard form
-    normalized_excel: List[Dict[str, Any]] = []
-    for record in excel_data:
-        record_id = (
-            record.get("Parent ID")
-            or record.get("Child ID")
-            or record.get("Invoice Num")
-            or record.get("id")
-        )
-        amount = (
-            record.get("Invoice Amount")
-            or record.get("Check Amount")
-            or record.get("AP")
-            or record.get("amount")
-        )
-        if record_id is not None and amount is not None:
-            normalized_excel.append(
-                {"id": normalize_id(record_id), "amount": float(amount)}
-            )
+    Args:
+        excel_data: List of records from Excel with 'id' and 'amount' keys
+        qb_data: List of records from QuickBooks with 'id' and 'amount' keys
 
-    # 🔹 Normalize QuickBooks data (if any)
-    normalized_qb: List[Dict[str, Any]] = []
-    for record in qb_data:
-        record_id = (
-            record.get("id")
-            or record.get("TxnID")
-            or record.get("bill")
-            or record.get("Name")
-        )
-        amount = (
-            record.get("amount")
-            or record.get("amount_to_pay")
-            or record.get("TotalAmount")
-        )
-        if record_id is not None and amount is not None:
-            normalized_qb.append(
-                {"id": normalize_id(record_id), "amount": float(amount)}
-            )
+    Returns:
+        Dict containing:
+            - missing_in_excel: Records in QB but not in Excel
+            - missing_in_qb: Records in Excel but not in QB
+            - amount_mismatches: Records with matching IDs but different amounts
+    """
+    # Index records by id (filter out None keys)
+    excel_by_id: Dict[Any, Dict[str, Any]] = {
+        rec.get("id"): rec for rec in excel_data if rec.get("id") is not None
+    }
+    qb_by_id: Dict[Any, Dict[str, Any]] = {
+        rec.get("id"): rec for rec in qb_data if rec.get("id") is not None
+    }
 
-    # 🔹 Validate
-    for record in normalized_excel + normalized_qb:
-        if "id" not in record or "amount" not in record:
-            raise KeyError(f"Record missing required fields: {record}")
-        if not isinstance(record["amount"], (int, float, Decimal)):
-            raise TypeError(f"Amount must be numeric: {record}")
-
-    discrepancies: Dict[str, Any] = {
+    results: Dict[str, Any] = {
         "missing_in_excel": [],
         "missing_in_qb": [],
         "amount_mismatches": [],
     }
 
-    excel_dict = {normalize_id(r["id"]): r for r in normalized_excel}
-    qb_dict = {normalize_id(r["id"]): r for r in normalized_qb}
+    # Find records missing in Excel (in QB but not Excel)
+    for qb_id, qb_rec in qb_by_id.items():
+        if qb_id not in excel_by_id:
+            results["missing_in_excel"].append(qb_rec)
 
-    # 🔹 Missing in Excel
-    for qb_id, qb_record in qb_dict.items():
-        if qb_id not in excel_dict:
-            discrepancies["missing_in_excel"].append(qb_record)
+    # Find records missing in QB (in Excel but not QB)
+    for excel_id, excel_rec in excel_by_id.items():
+        if excel_id not in qb_by_id:
+            results["missing_in_qb"].append(excel_rec)
 
-    # 🔹 Missing in QuickBooks
-    for excel_id, excel_record in excel_dict.items():
-        if excel_id not in qb_dict:
-            discrepancies["missing_in_qb"].append(excel_record)
+    # Find amount mismatches for matching IDs
+    for rec_id in excel_by_id.keys() & qb_by_id.keys():
+        excel_amount = normalize_amount(excel_by_id[rec_id].get("amount"))
+        qb_amount = normalize_amount(qb_by_id[rec_id].get("amount"))
 
-    # 🔹 Amount mismatches
-    for record_id in set(excel_dict.keys()) & set(qb_dict.keys()):
-        excel_amt = float(excel_dict[record_id]["amount"])
-        qb_amt = float(qb_dict[record_id]["amount"])
-        if abs(excel_amt - qb_amt) > amount_tolerance:
-            discrepancies["amount_mismatches"].append(
-                {"id": record_id, "excel_amount": excel_amt, "qb_amount": qb_amt}
+        if abs(excel_amount - qb_amount) > 0.01:  # tolerance of 1 cent
+            results["amount_mismatches"].append(
+                {
+                    "id": rec_id,
+                    "excel_amount": excel_amount,
+                    "qb_amount": qb_amount,
+                }
             )
 
-    # 🔹 Sort results
-    for key in discrepancies:
-        discrepancies[key].sort(key=lambda x: x["id"] if isinstance(x, dict) else x)
+    return results
 
-    return discrepancies
+
+def main():
+    """Main function."""
+    print("Bill Payment Comparer Module loaded successfully.")
+
+
+if __name__ == "__main__":
+    main()
 
 
 __all__ = ["compare_records"]

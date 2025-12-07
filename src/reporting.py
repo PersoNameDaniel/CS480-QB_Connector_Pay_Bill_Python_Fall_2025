@@ -3,30 +3,32 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from pathlib import Path
 from typing import Any, Dict
 
 
-def save_json_report(data: Dict[str, Any], output_path: str | Path) -> None:
-    """Save the comparison results to a JSON file.
+def _serialize_for_json(obj: Any) -> Any:
+    """Convert non-JSON-serializable objects to JSON-compatible types."""
+    if isinstance(obj, (date, datetime)):
+        return obj.isoformat()
+    if isinstance(obj, dict):
+        return {k: _serialize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_serialize_for_json(item) for item in obj]
+    return obj
 
-    Args:
-        data: The dictionary containing discrepancy results.
-        output_path: Path where the JSON file should be saved.
 
-    Raises:
-        OSError: If the file cannot be written.
-    """
-    path = Path(output_path)
+def save_json_report(discrepancies: Dict[str, Any], output_file: Path) -> None:
+    """Save discrepancy report to JSON file."""
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
-        # Print(f"Report successfully saved to {path}")
-        print(f"Report successfully saved to {path}")
+        # Convert datetime objects to ISO format strings
+        serializable_data = _serialize_for_json(discrepancies)
+
+        with open(output_file, "w") as f:
+            json.dump(serializable_data, f, indent=2)
     except Exception as e:
-        raise OSError(f"Failed to save JSON report to {path}: {e}")
+        raise Exception(f"Failed to save JSON report to {output_file}: {e}")
 
 
 def write_report(payload: Dict[str, Any], output_path: Path) -> Path:
