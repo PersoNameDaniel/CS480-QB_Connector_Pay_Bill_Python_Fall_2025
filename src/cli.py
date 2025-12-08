@@ -97,57 +97,59 @@ def main() -> int:
         except Exception as e:
             print(f"Error fetching QuickBooks data: {e}")
             return 1
-
-    print("Comparing Excel vs QuickBooks records...")
-    try:
-        result = compare_records(excel_records, qb_data)
-    except Exception as e:
-        print(f"Comparison failed: {e}")
-        return 1
-
-    try:
-        save_json_report(result, Path(args.output))
-        print(f"Report saved successfully to {args.output}")
-    except Exception as e:
-        print(f"Failed to save report: {e}")
-        return 1
-
-    # Add missing records to QuickBooks
-    if result["missing_in_qb"]:
-        print("Adding missing records to QuickBooks...")
+    
+        print("Comparing Excel vs QuickBooks records...")
         try:
-            # Convert missing records back to BillPayment objects
-            missing_payments = [
-                BillPayment(
-                    source="quickbooks",
-                    id=item["id"],  # Adjust based on your actual data structure
-                    # Handle date conversion
-                    date=(
-                        datetime.strptime(item["date"], "%Y-%m-%dT%H:%M:%S")
-                        if isinstance(item.get("date"), str)
-                        else item["date"]  # Ensure it's a datetime object
-                    ),
-                    amount_to_pay=item["amount_to_pay"],
-                    vendor=item["vendor"],  # Ensure this field exists in your data
-                )
-                for item in result["missing_in_qb"]
-            ]
-            added_payments = add_bill_payments_batch(
-                args.company_file, missing_payments
-            )
-            print(f"Added {len(added_payments)} payments to QuickBooks.")
+            result = compare_records(excel_records, qb_data)
         except Exception as e:
-            print(f"Failed to add payments to QuickBooks: {e}")
+            print(f"Comparison failed: {e}")
             return 1
-
-    print("\nComparison complete.")
-    print("Summary:")
-    print(f"  Missing in Excel: {len(result['missing_in_excel'])}")
-    print(f"  Missing in QuickBooks: {len(result['missing_in_qb'])}")
-    print(f"  Amount mismatches: {len(result['amount_mismatches'])}")
-
-    return 0
-
+    
+        try:
+            save_json_report(result, Path(args.output))
+            print(f"Report saved successfully to {args.output}")
+        except Exception as e:
+            print(f"Failed to save report: {e}")
+            return 1
+    
+        # Add missing payments to QuickBooks (only those in Excel but not QB)
+        if result["to_add_to_qb"]:
+            print(f"\nAdding {len(result['to_add_to_qb'])} missing payments to QuickBooks...")
+            try:
+                # Convert records back to BillPayment objects
+                missing_payments = [
+                    BillPayment(
+                        source="excel",
+                        id=item["id"],
+                        date=(
+                            datetime.fromisoformat(item["date"])
+                            if isinstance(item.get("date"), str)
+                            else item["date"]
+                        ),
+                        amount_to_pay=item["amount_to_pay"],
+                        vendor=item.get("vendor", ""),
+                    )
+                    for item in result["to_add_to_qb"]
+                ]
+                added_payments = add_bill_payments_batch(
+                    args.company_file, missing_payments
+                )
+                print(f"Successfully added {len(added_payments)} payments to QuickBooks.")
+            except Exception as e:
+                print(f"Failed to add payments to QuickBooks: {e}")
+                return 1
+        else:
+            print("\nNo missing payments to add to QuickBooks.")
+    
+        print("\n" + "="*60)
+        print("COMPARISON SUMMARY")
+        print("="*60)
+        print(f"  ✓ Same records (matching payments): {result['same_records_count']}")
+        print(f"  ⚠ Conflicts: {len(result['conflicts'])}")
+        print(f"  + Added to QuickBooks: {len(result.get('to_add_to_qb', []))}")
+        print("="*60)
+    
+        return 0
 
 if __name__ == "__main__":
     sys.exit(main())
