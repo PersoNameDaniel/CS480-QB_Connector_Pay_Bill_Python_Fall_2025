@@ -251,7 +251,6 @@ def add_bill_payments_batch(
                 vendor=vendor,
             )
         )
-
     return added_payments
 
 

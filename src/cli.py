@@ -117,9 +117,9 @@ def main() -> int:
             return 1
 
     # Add missing payments to QuickBooks (only those in Excel but not QB)
-    if result["to_add_to_qb"]:
+    if result["added_to_bill_payments"]:
         print(
-            f"\nAdding {len(result['to_add_to_qb'])} missing payments to QuickBooks..."
+            f"\nAdding {len(result['added_to_bill_payments'])} missing payments to QuickBooks..."
         )
         try:
             # Convert records back to BillPayment objects
@@ -135,12 +135,18 @@ def main() -> int:
                     amount_to_pay=item["amount_to_pay"],
                     vendor=item.get("vendor", ""),
                 )
-                for item in result["to_add_to_qb"]
+                for item in result["added_to_bill_payments"]
             ]
             added_payments = add_bill_payments_batch(
                 args.company_file, missing_payments
             )
             print(f"Successfully added {len(added_payments)} payments to QuickBooks.")
+            # Update result to include only the successfully added payments
+            successful_added = _to_record_list(added_payments)
+            for rec in successful_added:
+                if isinstance(rec.get("date"), datetime):
+                    rec["date"] = rec["date"].isoformat()
+            result["added_to_bill_payments"] = successful_added
         except Exception as e:
             print(f"Failed to add payments to QuickBooks: {e}")
             return 1
@@ -152,7 +158,7 @@ def main() -> int:
     print("=" * 60)
     print(f"Same records (matching payments): {result['same_records_count']}")
     print(f"Conflicts: {len(result['conflicts'])}")
-    print(f"Added to QuickBooks: {len(result.get('to_add_to_qb', []))}")
+    print(f"Added to QuickBooks: {len(result.get('added_to_bill_payments', []))}")
     print("=" * 60)
 
     return 0
