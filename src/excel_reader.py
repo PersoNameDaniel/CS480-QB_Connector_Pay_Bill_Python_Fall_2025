@@ -19,7 +19,7 @@ def _normalize(h: object) -> str:
 def _read_account_debit_sheet(
     workbook_path: Path, sheet_name: str
 ) -> List[BillPayment]:
-    print(f"debug: {workbook_path}, sheet: {sheet_name}")  # DEBUG DELETE ME
+    # print(f"debug: {workbook_path}, sheet: {sheet_name}")  # DEBUG DELETE ME
     workbook_path = Path(workbook_path)
     if not workbook_path.exists():
         raise FileNotFoundError(f"Workbook not found: {workbook_path}")
