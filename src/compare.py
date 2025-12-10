@@ -76,17 +76,19 @@ def compare_records(
         qb_amount = normalize_amount(qb_rec.get("amount_to_pay"))
 
         if abs(excel_amount - qb_amount) > 0.01:  # tolerance of 1 cent
-           results["conflicts"].append({
-                "type": "data_mismatch",
-                "excel_id": rec_id,
-                "qb_id": qb_rec.get("id"),
-                "excel_date": excel_rec.get("date"),
-                "qb_date": qb_rec.get("date"),
-                "excel_amount": excel_amount,
-                "qb_amount": qb_amount,
-                "excel_vendor": excel_rec.get("vendor"),
-                "qb_vendor": qb_rec.get("vendor"),
-            })
+            results["conflicts"].append(
+                {
+                    "type": "data_mismatch",
+                    "excel_id": rec_id,
+                    "qb_id": qb_rec.get("id"),
+                    "excel_date": excel_rec.get("date"),
+                    "qb_date": qb_rec.get("date"),
+                    "excel_amount": excel_amount,
+                    "qb_amount": qb_amount,
+                    "excel_vendor": excel_rec.get("vendor"),
+                    "qb_vendor": qb_rec.get("vendor"),
+                }
+            )
         else:
             # Payments match - count them
             results["same_records_count"] += 1
