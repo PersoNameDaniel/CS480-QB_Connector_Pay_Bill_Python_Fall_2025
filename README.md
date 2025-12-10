@@ -62,13 +62,13 @@ Sample output:
     }
     {
       "type": "missing_in_excel",
-      "excel_id": "",
+      "excel_id": "null",
       "qb_id": "44783-46191",
-      "excel_date": "",
+      "excel_date": "null",
       "qb_date": "2024-03-22T00:00:00",
-      "excel_amount": ,
+      "excel_amount": "null",
       "qb_amount": 145500.0,
-      "excel_vendor": "",
+      "excel_vendor": "null",
       "qb_vendor": "ATT(cell phone)"
     }
   ],
