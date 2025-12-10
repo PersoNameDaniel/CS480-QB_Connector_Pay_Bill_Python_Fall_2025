@@ -89,6 +89,24 @@ def compare_records(
                     "qb_vendor": qb_rec.get("vendor"),
                 }
             )
+        elif (
+            excel_rec.get("date") is None
+            or excel_rec.get("amount_to_pay") is None
+            or excel_rec.get("vendor") is None
+        ):
+            results["conflicts"].append(
+                {
+                    "type": "data_mismatch",
+                    "excel_id": "null",
+                    "qb_id": qb_rec.get("id"),
+                    "excel_date": "null",
+                    "qb_date": qb_rec.get("date"),
+                    "excel_amount": "null",
+                    "qb_amount": qb_amount,
+                    "excel_vendor": "null",
+                    "qb_vendor": qb_rec.get("vendor"),
+                }
+            )
         else:
             # Payments match - count them
             results["same_records_count"] += 1
