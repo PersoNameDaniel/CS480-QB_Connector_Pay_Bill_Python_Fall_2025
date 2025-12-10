@@ -22,11 +22,13 @@ To manually run ruff check and auto fix:
 poetry run ruff check --fix
 ```
 
-## Test
-Run
-```bash
-poetry run pytest
 ```
 
 ## Build
 To be filled by student. The CLI project needs to be built as an .exe file.
+
+build cli command for building cli to exe
+
+## run
+
+cli command to run exe
