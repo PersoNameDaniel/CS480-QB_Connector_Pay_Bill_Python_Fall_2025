@@ -48,7 +48,7 @@ jobs:
             venv-${{ runner.os }}-
 
       - name: Install dependencies
-        run: poetry install --no-interaction
+        run: poetry install --no-interaction --no-root
 
       # Runs all hooks defined in pre-commit (e.g., ruff, pytest, mypy)
       - name: Run pre-commit on all files
