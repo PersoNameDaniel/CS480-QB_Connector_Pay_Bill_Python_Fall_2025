@@ -1,25 +1,16 @@
 {
-  "same_records_count": 2,
+  "same_records_count": 1,
   "conflicts": [
     {
-      "type": "amount_mismatch",
-      "id": "44783-46191",
+      "type": "data_mismatch",
+      "excel_id": "44783-46191",
+      "qb_id": "44783-46191",
+      "excel_date": "2024-03-22T00:00:00",
+      "qb_date": "2024-03-22T00:00:00",
       "excel_amount": 14000.0,
-      "qb_amount": 12000.0,
-      "excel_record": {
-        "source": "excel",
-        "id": "44783-46191",
-        "date": "2024-03-22T00:00:00",
-        "amount_to_pay": 14000.0,
-        "vendor": "ATT(cell phone)"
-      },
-      "qb_record": {
-        "source": "quickbooks",
-        "id": "44783-46191",
-        "date": "2024-01-09T00:00:00",
-        "amount_to_pay": 12000.0,
-        "vendor": ""
-      }
+      "qb_amount": 145500.0,
+      "excel_vendor": "ATT(cell phone)",
+      "qb_vendor": "ATT(cell phone)"
     }
   ],
   "added_to_bill_payments": []

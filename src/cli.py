@@ -109,18 +109,18 @@ def main() -> int:
             print(f"Comparison failed: {e}")
             return 1
 
-        try:
-            save_json_report(result, Path(args.output))
-            print(f"Report saved successfully to {args.output}")
-        except Exception as e:
-            print(f"Failed to save report: {e}")
-            return 1
 
     # Add missing payments to QuickBooks (only those in Excel but not QB)
     if result["added_to_bill_payments"]:
         print(
             f"\nAdding {len(result['added_to_bill_payments'])} missing payments to QuickBooks..."
         )
+
+         # DEBUG: Print what we're trying to add
+        #print("\nDEBUG - Payments to add:")
+        #for payment in result["added_to_bill_payments"]:
+        #    print(f"  ID: {payment.get('id')}, Vendor: {payment.get('vendor')}, Amount: {payment.get('amount_to_pay')}, Date: {payment.get('date')}")
+        
         try:
             # Convert records back to BillPayment objects
             missing_payments = [
@@ -137,11 +137,26 @@ def main() -> int:
                 )
                 for item in result["added_to_bill_payments"]
             ]
+
+            # DEBUG: Print what we're trying to add
+            #print("\nDEBUG - Converted BillPayment objects to add:")
+            #for payment in missing_payments:
+            #    print(f"  ID: {payment.id}, Vendor: {payment.vendor}, Amount: {payment.amount_to_pay}, Date: {payment.date}")
+            
             added_payments = add_bill_payments_batch(
                 args.company_file, missing_payments
             )
             print(f"Successfully added {len(added_payments)} payments to QuickBooks.")
             # Update result to include only the successfully added payments
+            result["added_to_bill_payments"] = _to_record_list(added_payments)
+
+            try:
+                save_json_report(result, Path(args.output))
+                print(f"Report saved successfully to {args.output}")
+            except Exception as e:
+                print(f"Failed to save report: {e}")
+                return 1
+        
             successful_added = _to_record_list(added_payments)
             for rec in successful_added:
                 if isinstance(rec.get("date"), datetime):
