@@ -250,7 +250,7 @@ def add_bill_payments_batch(
 
         added_payments.append(
             BillPayment(
-                source="",
+                source="excel",
                 id=memo,
                 date=txn_date,
                 amount_to_pay=amount,
