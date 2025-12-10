@@ -130,7 +130,7 @@ def fetch_bill_payments(company_file: str | None = None) -> List[BillPayment]:
                 amount_to_pay_value = float(Decimal(header_amt))
         except (InvalidOperation, AttributeError, ValueError):
             amount_to_pay_value = 0.0
-        
+
         vendor = (ret.findtext("PayeeEntityRef/FullName") or "").strip()
 
         # Build the BillPayment model as defined in models.py
@@ -140,7 +140,7 @@ def fetch_bill_payments(company_file: str | None = None) -> List[BillPayment]:
                 id=memo,
                 date=txn_date,
                 amount_to_pay=amount_to_pay_value,
-                vendor=vendor
+                vendor=vendor,
             )
         )
     return payments
@@ -226,7 +226,7 @@ def add_bill_payments_batch(
     added_payments: List[BillPayment] = []
     for payment_ret in root.findall(".//BillPaymentCheckRet"):
         memo = (payment_ret.findtext("Memo") or "").strip()
-        vendor = (payment_ret.findtext("PayeeEntityRef/FullName")).strip()
+        vendor = (payment_ret.findtext("PayeeEntityRef/FullName") or "").strip()
 
         # DEBUG: Print what was added
         # print(f"DEBUG Vendor:{vendor}")
@@ -250,7 +250,7 @@ def add_bill_payments_batch(
 
         added_payments.append(
             BillPayment(
-                source="",
+                source="excel",
                 id=memo,
                 date=txn_date,
                 amount_to_pay=amount,
